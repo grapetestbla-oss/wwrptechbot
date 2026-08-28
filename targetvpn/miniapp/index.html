@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <title>TargetVPN</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <div id="splash" class="splash">
+    <div class="logo-mark">T</div>
+    <div class="splash-title">TargetVPN</div>
+    <div class="spinner"></div>
+  </div>
+
+  <div id="blocked" class="screen-center hidden">
+    <div class="big-emoji">🚫</div>
+    <h2>Доступ заблокирован</h2>
+    <p id="blocked-reason" class="muted"></p>
+  </div>
+
+  <main id="app" class="hidden">
+    <!-- ГЛАВНАЯ -->
+    <section class="page" data-page="home">
+      <header class="hero">
+        <div class="hero-top">
+          <div class="brand"><span class="logo-mark small">T</span> TargetVPN</div>
+          <button class="icon-btn" id="btn-support" title="Поддержка">💬</button>
+        </div>
+        <div id="status-card" class="status-card"></div>
+      </header>
+
+      <div id="home-actions" class="stack"></div>
+
+      <div class="features">
+        <div class="feature"><span>🛡️</span><div><b>VLESS Reality</b><small>Маскировка под обычный HTTPS</small></div></div>
+        <div class="feature"><span>⚡</span><div><b>До 1 Гбит/с</b><small>Без ограничений скорости</small></div></div>
+        <div class="feature"><span>🔓</span><div><b>Обход белых списков</b><small>Работает при жёстких блокировках</small></div></div>
+        <div class="feature"><span>📵</span><div><b>Без логов</b><small>Не храним историю посещений</small></div></div>
+      </div>
+    </section>
+
+    <!-- ТАРИФЫ -->
+    <section class="page hidden" data-page="plans">
+      <h1 class="page-title">Тарифы</h1>
+      <p class="page-sub">Оплата в Telegram Stars или криптой. Продление в один тап.</p>
+      <div class="promo-row">
+        <input id="promo-input" class="input" placeholder="Промокод" autocomplete="off" />
+        <button id="promo-apply" class="btn btn-ghost">Применить</button>
+      </div>
+      <div id="promo-status" class="promo-status"></div>
+      <div id="plans-list" class="stack"></div>
+    </section>
+
+    <!-- УСТРОЙСТВА -->
+    <section class="page hidden" data-page="devices">
+      <h1 class="page-title">Устройства</h1>
+      <p class="page-sub" id="devices-limit"></p>
+      <div id="devices-list" class="stack"></div>
+      <button id="btn-add-device" class="btn btn-primary wide">+ Добавить устройство</button>
+      <div class="card guide">
+        <h3>Как подключиться</h3>
+        <ol>
+          <li>Добавьте устройство и скопируйте ключ.</li>
+          <li>Установите клиент: <b>v2rayNG</b> (Android), <b>Streisand</b>/<b>V2Box</b> (iOS), <b>Hiddify</b> (Windows/macOS).</li>
+          <li>Вставьте ключ или подпишитесь по ссылке — все устройства обновятся сами.</li>
+        </ol>
+        <button id="btn-copy-sub" class="btn btn-ghost wide">Скопировать ссылку-подписку</button>
+      </div>
+    </section>
+
+    <!-- ПРОФИЛЬ -->
+    <section class="page hidden" data-page="profile">
+      <h1 class="page-title">Профиль</h1>
+      <div id="profile-card" class="stack"></div>
+    </section>
+
+    <!-- АДМИНКА -->
+    <section class="page hidden" data-page="admin">
+      <h1 class="page-title">Админка</h1>
+      <div class="tabs" id="admin-tabs">
+        <button class="tab active" data-tab="stats">Статистика</button>
+        <button class="tab" data-tab="plans">Тарифы</button>
+        <button class="tab" data-tab="users">Юзеры</button>
+        <button class="tab" data-tab="promos">Промо</button>
+        <button class="tab" data-tab="logs">Логи</button>
+      </div>
+      <div id="admin-body" class="stack"></div>
+    </section>
+
+    <nav class="tabbar" id="tabbar">
+      <button class="tabbar-btn active" data-goto="home"><span>🏠</span>Главная</button>
+      <button class="tabbar-btn" data-goto="plans"><span>💎</span>Тарифы</button>
+      <button class="tabbar-btn" data-goto="devices"><span>📱</span>Устройства</button>
+      <button class="tabbar-btn" data-goto="profile"><span>👤</span>Профиль</button>
+      <button class="tabbar-btn hidden" data-goto="admin" id="tab-admin"><span>🛠</span>Админка</button>
+    </nav>
+  </main>
+
+  <div id="sheet" class="sheet hidden">
+    <div class="sheet-backdrop"></div>
+    <div class="sheet-body" id="sheet-body"></div>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="./admin.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

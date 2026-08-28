@@ -1,0 +1,15 @@
+[Unit]
+Description=TargetVPN Telegram bot
+After=network-online.target targetvpn-api.service
+
+[Service]
+Type=simple
+User=targetvpn
+WorkingDirectory=/opt/targetvpn
+EnvironmentFile=/opt/targetvpn/.env
+ExecStart=/opt/targetvpn/.venv/bin/python bot/bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

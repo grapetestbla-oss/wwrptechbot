@@ -1,0 +1,15 @@
+[Unit]
+Description=TargetVPN API (FastAPI + Mini App)
+After=network-online.target
+
+[Service]
+Type=simple
+User=targetvpn
+WorkingDirectory=/opt/targetvpn
+EnvironmentFile=/opt/targetvpn/.env
+ExecStart=/opt/targetvpn/.venv/bin/uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
