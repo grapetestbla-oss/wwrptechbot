@@ -97,12 +97,43 @@ class Subscription(Base):
     plan: Mapped[Plan | None] = relationship()
 
 
+class Node(Base):
+    """VPN-нода: отдельный ВПС с панелью Marzban. Локация в интерфейсе = нода."""
+
+    __tablename__ = "nodes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    title: Mapped[str] = mapped_column(String(64))
+    flag: Mapped[str] = mapped_column(String(8), default="🌍")
+    country: Mapped[str] = mapped_column(String(64), default="")
+    url: Mapped[str] = mapped_column(String(255), default="")
+    username: Mapped[str] = mapped_column(String(64), default="")
+    password: Mapped[str] = mapped_column(String(128), default="")
+    verify_ssl: Mapped[bool] = mapped_column(Boolean, default=True)
+    inbounds_json: Mapped[str] = mapped_column(Text, default='{"vless": ["VLESS TCP REALITY"]}')
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    @property
+    def inbounds(self) -> dict:
+        import json
+        try:
+            return json.loads(self.inbounds_json or "{}") or {}
+        except ValueError:
+            return {}
+
+
 class Device(Base):
     __tablename__ = "devices"
     __table_args__ = (UniqueConstraint("remote_username", name="uq_device_remote"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    node_id: Mapped[int | None] = mapped_column(ForeignKey("nodes.id", ondelete="SET NULL"),
+                                                index=True)
     name: Mapped[str] = mapped_column(String(64), default="Устройство")
     platform: Mapped[str] = mapped_column(String(16), default="other")
     # Имя пользователя на ноде Marzban — одно устройство = один аккаунт на ноде.
@@ -115,6 +146,7 @@ class Device(Base):
     synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     user: Mapped[User] = relationship(back_populates="devices")
+    node: Mapped["Node | None"] = relationship()
 
 
 class Payment(Base):

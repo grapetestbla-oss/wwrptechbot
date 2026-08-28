@@ -9,10 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..db import get_session
-from ..models import Device, Payment, PaymentStatus, Plan, User, utcnow
+from ..models import Device, Node, Payment, PaymentStatus, Plan, User, utcnow
 from ..schemas import (AuthRequest, AuthResponse, DeviceCreate, DeviceOut,
-                       PlanOut, PromoCheck, PurchaseRequest, PurchaseResponse,
-                       StateOut, SubscriptionOut, UserOut)
+                       NodeOut, PlanOut, PromoCheck, PurchaseRequest,
+                       PurchaseResponse, StateOut, SubscriptionOut, UserOut)
 from ..security import (create_token, current_user, get_or_create_user,
                         verify_init_data)
 from ..services import billing, subs
@@ -41,8 +41,21 @@ def plan_out(plan: Plan) -> PlanOut:
     )
 
 
-def device_out(device: Device) -> DeviceOut:
+def available_payment_methods() -> list[str]:
+    methods = []
+    if settings.bot_token:
+        methods.append("stars")
+    if settings.cryptobot_token:
+        methods.append("cryptobot")
+    if billing.lzt_enabled():
+        methods.append("lzt")
+    return methods
+
+
+def device_out(device: Device, node: Node | None = None) -> DeviceOut:
     return DeviceOut(id=device.id, name=device.name, platform=device.platform,
+                     node_title=node.title if node else "",
+                     node_flag=node.flag if node else "",
                      config_url=device.config_url,
                      used_traffic_gb=round(device.used_traffic / 1024 ** 3, 2),
                      is_active=device.is_active, created_at=device.created_at)
@@ -70,6 +83,7 @@ async def state(user: User = Depends(current_user), session: AsyncSession = Depe
     sub = await subs.active_subscription(session, user)
     devices = (await session.execute(
         select(Device).where(Device.user_id == user.id).order_by(Device.id))).scalars().all()
+    nodes = {n.id: n for n in (await session.execute(select(Node))).scalars().all()}
     referrals = (await session.execute(
         select(func.count(User.id)).where(User.referrer_id == user.tg_id))).scalar_one()
 
@@ -87,11 +101,12 @@ async def state(user: User = Depends(current_user), session: AsyncSession = Depe
     return StateOut(
         user=user_out(user, referrals),
         subscription=sub_out,
-        devices=[device_out(d) for d in devices],
+        devices=[device_out(d, nodes.get(d.node_id)) for d in devices],
         sub_url=f"{settings.public_base_url.rstrip('/')}/sub/{user.sub_token}",
         support_url=settings.support_url,
         trial_available=bool(settings.trial_enabled and trial_plan and not user.trial_used
                              and sub is None),
+        payment_methods=available_payment_methods(),
     )
 
 
@@ -101,6 +116,14 @@ async def plans(user: User = Depends(current_user), session: AsyncSession = Depe
         select(Plan).where(Plan.is_active.is_(True)).order_by(Plan.sort_order, Plan.price_rub)
     )).scalars().all()
     return [plan_out(p) for p in rows if not p.is_trial or not user.trial_used]
+
+
+@router.get("/nodes", response_model=list[NodeOut])
+async def nodes(user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    rows = (await session.execute(select(Node).where(Node.is_active.is_(True))
+                                  .order_by(Node.sort_order, Node.id))).scalars().all()
+    return [NodeOut(id=n.id, code=n.code, title=n.title, flag=n.flag, country=n.country,
+                    is_default=n.is_default) for n in rows]
 
 
 @router.post("/trial", response_model=SubscriptionOut)
@@ -127,10 +150,13 @@ async def activate_trial(user: User = Depends(current_user),
 async def create_device(payload: DeviceCreate, user: User = Depends(current_user),
                         session: AsyncSession = Depends(get_session)):
     try:
-        device = await subs.add_device(session, user, payload.name, payload.platform)
+        device = await subs.add_device(session, user, payload.name, payload.platform,
+                                       payload.node_id)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-    return device_out(device)
+    node = (await session.execute(select(Node).where(
+        Node.id == device.node_id))).scalar_one_or_none() if device.node_id else None
+    return device_out(device, node)
 
 
 @router.delete("/devices/{device_id}")
@@ -154,7 +180,9 @@ async def refresh_device(device_id: int, user: User = Depends(current_user),
         device = await subs.refresh_device(session, device)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-    return device_out(device)
+    node = (await session.execute(select(Node).where(
+        Node.id == device.node_id))).scalar_one_or_none() if device.node_id else None
+    return device_out(device, node)
 
 
 @router.post("/promo/check")
@@ -198,6 +226,17 @@ async def purchase(payload: PurchaseRequest, user: User = Depends(current_user),
         return PurchaseResponse(payment_id=payment.id, method="cryptobot",
                                 invoice_url=meta.get("url", ""), amount_rub=price,
                                 amount_native=payment.amount_native, currency=payment.currency)
+
+    if payload.method == "lzt":
+        try:
+            payment = await billing.lzt_create_invoice(session, user, plan, price, promo_code)
+        except billing.BillingError as exc:
+            raise HTTPException(400, str(exc))
+        meta = json.loads(payment.payload or "{}")
+        return PurchaseResponse(payment_id=payment.id, method="lzt",
+                                invoice_url=meta.get("url", ""), amount_rub=price,
+                                amount_native=payment.amount_native, currency="RUB",
+                                comment=meta.get("comment", ""))
 
     if payload.method == "stars":
         payment = Payment(user_id=user.id, plan_id=plan.id, provider="stars",

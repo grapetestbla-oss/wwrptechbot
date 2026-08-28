@@ -8,11 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..db import get_session
-from ..marzban import MarzbanError, marzban
-from ..models import (AdminLog, Device, Notification, Payment, PaymentStatus,
-                      Plan, PromoCode, Role, Subscription, User, utcnow)
+from ..marzban import MarzbanError, client_for, marzban
+from ..models import (AdminLog, Device, Node, Notification, Payment,
+                      PaymentStatus, Plan, PromoCode, Role, Subscription, User,
+                      utcnow)
 from ..schemas import (AdminUserOut, BanRequest, BroadcastRequest, GrantRequest,
-                       PlanOut, PlanUpsert, PromoUpsert, RoleRequest, StatsOut)
+                       NodeAdminOut, NodeUpsert, PlanOut, PlanUpsert, PromoUpsert,
+                       RoleRequest, StatsOut)
 from ..security import current_admin, current_owner
 from ..services import subs
 from .api import plan_out
@@ -33,11 +35,14 @@ async def stats(admin: User = Depends(current_admin), session: AsyncSession = De
         Subscription.is_active.is_(True)))).scalars().all()
     active_subs = [s for s in active_subs if subs.aware(s.expires_at) > now]
 
-    node_online = True
-    try:
-        await marzban.system_stats()
-    except MarzbanError:
-        node_online = False
+    nodes = (await session.execute(select(Node).where(Node.is_active.is_(True)))).scalars().all()
+    online = 0
+    for node in nodes:
+        try:
+            await client_for(node).system_stats()
+            online += 1
+        except (MarzbanError, OSError):
+            continue
 
     return StatsOut(
         users_total=await scalar(select(func.count(User.id))),
@@ -54,7 +59,9 @@ async def stats(admin: User = Depends(current_admin), session: AsyncSession = De
         payments_total=await scalar(select(func.count(Payment.id))
                                     .where(Payment.status == PaymentStatus.paid)),
         new_users_today=await scalar(select(func.count(User.id)).where(User.created_at >= day_ago)),
-        node_online=node_online,
+        node_online=bool(nodes) and online == len(nodes),
+        nodes_total=len(nodes),
+        nodes_online=online,
     )
 
 
@@ -284,3 +291,83 @@ async def payments(limit: int = 50, admin: User = Depends(current_admin),
                     "amount_rub": p.amount_rub, "status": p.status.value,
                     "at": (p.paid_at or p.created_at).isoformat()})
     return out
+
+
+# --- Ноды (локации) ---
+
+@router.get("/nodes", response_model=list[NodeAdminOut])
+async def list_nodes(check: bool = False, admin: User = Depends(current_admin),
+                     session: AsyncSession = Depends(get_session)):
+    rows = (await session.execute(select(Node).order_by(Node.sort_order, Node.id))).scalars().all()
+    result = []
+    for node in rows:
+        devices = (await session.execute(select(func.count(Device.id)).where(
+            Device.node_id == node.id, Device.is_active.is_(True)))).scalar_one()
+        online = None
+        if check:
+            try:
+                await client_for(node).system_stats()
+                online = True
+            except (MarzbanError, OSError):
+                online = False
+        result.append(NodeAdminOut(
+            id=node.id, code=node.code, title=node.title, flag=node.flag, country=node.country,
+            is_default=node.is_default, url=node.url, username=node.username,
+            verify_ssl=node.verify_ssl, inbounds_json=node.inbounds_json,
+            is_active=node.is_active, sort_order=node.sort_order, devices=devices, online=online))
+    return result
+
+
+@router.post("/nodes", response_model=NodeAdminOut)
+async def upsert_node(payload: NodeUpsert, admin: User = Depends(current_admin),
+                      session: AsyncSession = Depends(get_session)):
+    import json as _json
+    try:
+        _json.loads(payload.inbounds_json)
+    except ValueError:
+        raise HTTPException(400, "Инбаунды должны быть корректным JSON")
+
+    if payload.id:
+        node = (await session.execute(select(Node).where(Node.id == payload.id))).scalar_one_or_none()
+        if node is None:
+            raise HTTPException(404, "Локация не найдена")
+    else:
+        if (await session.execute(select(Node).where(Node.code == payload.code))).scalar_one_or_none():
+            raise HTTPException(400, "Локация с таким кодом уже есть")
+        node = Node(code=payload.code)
+        session.add(node)
+
+    data = payload.model_dump(exclude={"id"})
+    # Пустой пароль при редактировании означает «оставить прежний».
+    if payload.id and not payload.password:
+        data.pop("password")
+    for field, value in data.items():
+        setattr(node, field, value)
+
+    if node.is_default:
+        for other in (await session.execute(select(Node))).scalars().all():
+            if other.code != node.code:
+                other.is_default = False
+
+    await subs.log_admin(session, admin.tg_id, "node_upsert", payload.code, payload.title)
+    await session.commit()
+    await session.refresh(node)
+    return NodeAdminOut(id=node.id, code=node.code, title=node.title, flag=node.flag,
+                        country=node.country, is_default=node.is_default, url=node.url,
+                        username=node.username, verify_ssl=node.verify_ssl,
+                        inbounds_json=node.inbounds_json, is_active=node.is_active,
+                        sort_order=node.sort_order)
+
+
+@router.delete("/nodes/{node_id}")
+async def disable_node(node_id: int, admin: User = Depends(current_admin),
+                       session: AsyncSession = Depends(get_session)):
+    node = (await session.execute(select(Node).where(Node.id == node_id))).scalar_one_or_none()
+    if node is None:
+        raise HTTPException(404, "Локация не найдена")
+    # Мягкое отключение: выданные ключи остаются, новые устройства сюда не попадают.
+    node.is_active = False
+    node.is_default = False
+    await subs.log_admin(session, admin.tg_id, "node_disable", node.code)
+    await session.commit()
+    return {"ok": True}

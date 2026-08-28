@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import time
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from .config import settings
+
+if TYPE_CHECKING:
+    from .models import Node
 
 log = logging.getLogger("marzban")
 
@@ -18,24 +22,29 @@ class MarzbanError(RuntimeError):
 
 
 class MarzbanClient:
-    """Тонкий асинхронный клиент панели Marzban (Xray/VLESS Reality на VPN-ВПС).
+    """Тонкий асинхронный клиент панели Marzban (Xray/VLESS Reality на VPN-ноде).
 
     Одно устройство пользователя = один аккаунт на ноде. Так лимит устройств
     реально соблюдается на стороне Xray, а не только в интерфейсе.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, url: str, username: str, password: str, verify_ssl: bool = True,
+                 inbounds: dict | None = None) -> None:
+        self.url = (url or "").rstrip("/")
+        self.username = username
+        self.password = password
+        self.verify_ssl = verify_ssl
+        self.inbounds = inbounds or {"vless": ["VLESS TCP REALITY"]}
         self._token: str | None = None
         self._token_exp: float = 0.0
         self._lock = asyncio.Lock()
 
     @property
     def enabled(self) -> bool:
-        return bool(settings.marzban_url) and not settings.demo_mode
+        return bool(self.url) and not settings.demo_mode
 
     def _client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(base_url=settings.marzban_url.rstrip("/"),
-                                 verify=settings.marzban_verify_ssl, timeout=20.0)
+        return httpx.AsyncClient(base_url=self.url, verify=self.verify_ssl, timeout=20.0)
 
     async def _auth_header(self) -> dict[str, str]:
         async with self._lock:
@@ -43,11 +52,10 @@ class MarzbanClient:
                 return {"Authorization": f"Bearer {self._token}"}
             async with self._client() as client:
                 resp = await client.post("/api/admin/token", data={
-                    "username": settings.marzban_username,
-                    "password": settings.marzban_password,
-                })
+                    "username": self.username, "password": self.password})
             if resp.status_code != 200:
-                raise MarzbanError(f"Не удалось авторизоваться в Marzban: {resp.text[:200]}")
+                raise MarzbanError(f"Не удалось авторизоваться в Marzban ({self.url}): "
+                                   f"{resp.text[:200]}")
             self._token = resp.json()["access_token"]
             self._token_exp = time.time() + 45 * 60
             return {"Authorization": f"Bearer {self._token}"}
@@ -71,33 +79,32 @@ class MarzbanClient:
 
     async def get_user(self, username: str) -> dict | None:
         if not self.enabled:
-            return _demo_user(username)
+            return _demo_user(username, self.url)
         return await self._request("GET", f"/api/user/{username}")
 
     async def create_user(self, username: str, expire_ts: int, traffic_gb: int = 0,
                           note: str = "") -> dict:
         if not self.enabled:
-            return _demo_user(username)
+            return _demo_user(username, self.url)
+        if await self._request("GET", f"/api/user/{username}"):
+            return await self.update_user(username, expire_ts=expire_ts, traffic_gb=traffic_gb,
+                                          status="active")
         payload = {
             "username": username,
-            "proxies": {p: {} for p in settings.marzban_inbounds},
-            "inbounds": settings.marzban_inbounds,
+            "proxies": {p: {} for p in self.inbounds},
+            "inbounds": self.inbounds,
             "expire": expire_ts,
             "data_limit": traffic_gb * 1024 ** 3 if traffic_gb else 0,
             "data_limit_reset_strategy": "no_reset",
             "status": "active",
             "note": note,
         }
-        existing = await self._request("GET", f"/api/user/{username}")
-        if existing:
-            return await self.update_user(username, expire_ts=expire_ts, traffic_gb=traffic_gb,
-                                          status="active")
         return await self._request("POST", "/api/user", json=payload)
 
     async def update_user(self, username: str, expire_ts: int | None = None,
                           traffic_gb: int | None = None, status: str | None = None) -> dict:
         if not self.enabled:
-            return _demo_user(username)
+            return _demo_user(username, self.url)
         payload: dict[str, Any] = {}
         if expire_ts is not None:
             payload["expire"] = expire_ts
@@ -126,19 +133,36 @@ class MarzbanClient:
         return await self._request("GET", "/api/system") or {}
 
 
-def _demo_user(username: str) -> dict:
+def _demo_user(username: str, host: str = "") -> dict:
     """Фейковый ответ для DEMO_MODE — чтобы разрабатывать без живой ноды."""
-    uid = uuid.uuid5(uuid.NAMESPACE_DNS, username)
-    link = (f"vless://{uid}@demo.targetvpn.node:443?type=tcp&security=reality"
+    uid = uuid.uuid5(uuid.NAMESPACE_DNS, f"{host}/{username}")
+    node_host = (host.split("//")[-1].split(":")[0] or "demo.targetvpn.node")
+    link = (f"vless://{uid}@{node_host}:443?type=tcp&security=reality"
             f"&sni=www.microsoft.com&fp=chrome&pbk=DEMOPUBLICKEY&sid=ab12#TargetVPN-{username}")
-    return {
-        "username": username,
-        "status": "active",
-        "used_traffic": 0,
-        "data_limit": 0,
-        "links": [link],
-        "subscription_url": f"/sub/demo-{username}",
-    }
+    return {"username": username, "status": "active", "used_traffic": 0, "data_limit": 0,
+            "links": [link], "subscription_url": f"/sub/demo-{username}"}
 
 
-marzban = MarzbanClient()
+_clients: dict[str, MarzbanClient] = {}
+
+
+def _fingerprint(node: "Node") -> str:
+    raw = f"{node.id}|{node.url}|{node.username}|{node.password}|{node.verify_ssl}|{node.inbounds_json}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def client_for(node: "Node") -> MarzbanClient:
+    """Клиент конкретной ноды. Пересоздаётся, если админ поменял доступы."""
+    key = _fingerprint(node)
+    client = _clients.get(key)
+    if client is None:
+        client = MarzbanClient(node.url, node.username, node.password, node.verify_ssl,
+                               node.inbounds)
+        _clients[key] = client
+    return client
+
+
+# Клиент из .env — используется, пока в базе нет ни одной ноды.
+marzban = MarzbanClient(settings.marzban_url, settings.marzban_username,
+                        settings.marzban_password, settings.marzban_verify_ssl,
+                        settings.marzban_inbounds)

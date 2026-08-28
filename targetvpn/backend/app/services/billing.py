@@ -135,6 +135,116 @@ async def stars_create_invoice_link(user: User, plan: Plan, price_rub: float,
     return data["result"]
 
 
+# --- LZT Market ---
+
+def lzt_enabled() -> bool:
+    return bool(settings.lzt_token and settings.lzt_user_id)
+
+
+def lzt_comment(payment_id: int) -> str:
+    """Уникальный код перевода — по нему находим платёж среди входящих."""
+    return f"TVPN{payment_id}"
+
+
+async def lzt_create_invoice(session: AsyncSession, user: User, plan: Plan,
+                             price_rub: float, promo_code: str = "") -> Payment:
+    if not lzt_enabled():
+        raise BillingError("Оплата через LZT Market временно недоступна")
+    amount = int(math.ceil(price_rub))
+    payment = Payment(user_id=user.id, plan_id=plan.id, provider="lzt",
+                      amount_rub=price_rub, amount_native=amount, currency="RUB",
+                      payload=json.dumps({"promo": promo_code}))
+    session.add(payment)
+    await session.flush()
+
+    comment = lzt_comment(payment.id)
+    payment.external_id = comment
+    url = settings.lzt_transfer_url.format(username=settings.lzt_username,
+                                           user_id=settings.lzt_user_id,
+                                           amount=amount, comment=comment)
+    payment.payload = json.dumps({"promo": promo_code, "url": url, "comment": comment,
+                                  "amount": amount})
+    await session.commit()
+    return payment
+
+
+def _lzt_extract(item: dict) -> tuple[str, float]:
+    """Достаёт комментарий и сумму из записи о переводе.
+
+    Схема ответа LZT Market менялась, поэтому разбираем терпимо: смотрим и в
+    сам объект, и во вложенный `data`.
+    """
+    data = item.get("data") if isinstance(item.get("data"), dict) else {}
+    comment = ""
+    for key in ("comment", "payment_comment", "label", "description"):
+        value = item.get(key) or data.get(key)
+        if isinstance(value, str) and value.strip():
+            comment = value.strip()
+            break
+    amount = 0.0
+    for key in ("amount", "incoming_sum", "sum", "value"):
+        value = item.get(key) if item.get(key) is not None else data.get(key)
+        if isinstance(value, (int, float, str)):
+            try:
+                amount = abs(float(value))
+                break
+            except (TypeError, ValueError):
+                continue
+    return comment, amount
+
+
+async def lzt_fetch_incoming(limit: int = 50) -> list[dict]:
+    async with httpx.AsyncClient(timeout=25.0) as client:
+        resp = await client.get(
+            f"{settings.lzt_api.rstrip('/')}/user/{settings.lzt_user_id}/payments",
+            headers={"Authorization": f"Bearer {settings.lzt_token}",
+                     "Accept": "application/json"},
+            params={"type": "income_transfer", "limit": limit},
+        )
+    if resp.status_code >= 400:
+        raise BillingError(f"LZT Market ответил {resp.status_code}: {resp.text[:200]}")
+    body = resp.json()
+    payments = body.get("payments", body)
+    if isinstance(payments, dict):
+        return list(payments.values())
+    return payments if isinstance(payments, list) else []
+
+
+async def lzt_check_pending(session: AsyncSession) -> int:
+    """Сверяет входящие переводы LZT с ожидающими платежами. Возвращает число активаций."""
+    if not lzt_enabled():
+        return 0
+    pending = (await session.execute(select(Payment).where(
+        Payment.provider == "lzt", Payment.status == PaymentStatus.pending))).scalars().all()
+    if not pending:
+        return 0
+
+    incoming = await lzt_fetch_incoming()
+    by_comment: dict[str, float] = {}
+    for item in incoming:
+        if not isinstance(item, dict):
+            continue
+        comment, amount = _lzt_extract(item)
+        if comment:
+            by_comment[comment.upper()] = max(by_comment.get(comment.upper(), 0.0), amount)
+
+    activated = 0
+    for payment in pending:
+        received = by_comment.get(lzt_comment(payment.id))
+        if received is None:
+            continue
+        if received + 0.01 < payment.amount_native:
+            log.warning("LZT: перевод %s меньше суммы счёта (%s < %s)",
+                        lzt_comment(payment.id), received, payment.amount_native)
+            continue
+        try:
+            await complete_payment(session, payment)
+            activated += 1
+        except BillingError as exc:
+            log.error("LZT: не удалось активировать платёж %s: %s", payment.id, exc)
+    return activated
+
+
 async def complete_payment(session: AsyncSession, payment: Payment) -> None:
     """Единая точка выдачи подписки после успешной оплаты (любой провайдер)."""
     if payment.status == PaymentStatus.paid:

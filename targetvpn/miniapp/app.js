@@ -3,8 +3,8 @@ const tg = window.Telegram?.WebApp;
 const API = (location.origin.includes('localhost') || location.origin.startsWith('http'))
   ? location.origin : '';
 
-const state = { token: '', user: null, sub: null, devices: [], plans: [], subUrl: '',
-                trialAvailable: false, supportUrl: '', promo: null, timer: null };
+const state = { token: '', user: null, sub: null, devices: [], plans: [], nodes: [], subUrl: '',
+                trialAvailable: false, supportUrl: '', methods: [], promo: null, timer: null };
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -107,6 +107,7 @@ async function refresh() {
   state.subUrl = data.sub_url;
   state.supportUrl = data.support_url;
   state.trialAvailable = data.trial_available;
+  state.methods = data.payment_methods || [];
   renderHome();
   renderDevices();
   renderProfile();
@@ -282,17 +283,24 @@ async function checkPromo() {
 
 /* ---------- Оплата ---------- */
 
+const PAY_LABELS = {
+  stars: '⭐️ Telegram Stars',
+  cryptobot: '💎 Криптой (USDT/TON)',
+  lzt: '🐝 Переводом на LZT Market',
+};
+
 function openPayment(planId) {
   const plan = state.plans.find((p) => p.id === planId);
   if (!plan) return;
   const price = state.promo ? state.promo.prices[plan.id] ?? plan.price_rub : plan.price_rub;
+  const methods = state.methods.length ? state.methods : ['stars'];
   openSheet(`
     <div class="sheet-title">${esc(plan.emoji)} ${esc(plan.title)} · ${price} ₽</div>
     <p class="muted" style="margin-top:-6px">${humanDuration(plan.duration_hours)},
       ${plan.devices} ${plural(plan.devices, ['устройство', 'устройства', 'устройств'])}</p>
     <div class="stack" style="margin-top:14px">
-      <button class="btn btn-primary wide" data-pay="stars">⭐️ Telegram Stars</button>
-      <button class="btn btn-ghost wide" data-pay="cryptobot">💎 Криптой (USDT/TON)</button>
+      ${methods.map((m, i) => `<button class="btn ${i === 0 ? 'btn-primary' : 'btn-ghost'} wide"
+        data-pay="${m}">${PAY_LABELS[m] || m}</button>`).join('')}
     </div>
     <p class="muted" style="font-size:12px;margin-top:14px">
       Подписка активируется автоматически сразу после оплаты.</p>`);
@@ -315,6 +323,9 @@ async function pay(plan, method, btn) {
         if (status === 'paid') { toast('Оплата прошла, активируем подписку…'); pollPayment(res.payment_id); }
         else if (status === 'failed') toast('Платёж не прошёл');
       });
+    } else if (method === 'lzt') {
+      openLztInstructions(res);
+      pollPayment(res.payment_id, 60);
     } else if (res.invoice_url) {
       tg?.openTelegramLink?.(res.invoice_url) || window.open(res.invoice_url, '_blank');
       toast('Счёт открыт в CryptoBot. После оплаты вернитесь сюда.');
@@ -324,6 +335,27 @@ async function pay(plan, method, btn) {
     toast(err.message);
     btn.disabled = false;
   }
+}
+
+function openLztInstructions(res) {
+  openSheet(`
+    <div class="sheet-title">Перевод на LZT Market</div>
+    <p class="muted" style="margin-top:-6px;font-size:13px">
+      Переведите <b>${res.amount_native} ₽</b> и обязательно укажите комментарий —
+      по нему платёж находится автоматически, обычно за минуту.</p>
+    <div class="field" style="margin-top:12px"><label>Комментарий к переводу</label>
+      <div class="key-box" id="lzt-comment">${esc(res.comment)}</div></div>
+    <div class="stack" style="margin-top:12px">
+      <button class="btn btn-ghost wide" id="lzt-copy">📋 Скопировать комментарий</button>
+      <button class="btn btn-primary wide" id="lzt-open">Открыть форму перевода</button>
+    </div>
+    <p class="muted" style="font-size:12px;margin-top:12px">
+      Окно можно закрыть — подписка включится сама, придёт уведомление от бота.</p>`);
+  document.querySelector('#lzt-copy').addEventListener('click',
+    () => copy(res.comment, 'Комментарий скопирован'));
+  document.querySelector('#lzt-open').addEventListener('click', () => {
+    if (res.invoice_url) tg?.openLink?.(res.invoice_url) || window.open(res.invoice_url, '_blank');
+  });
 }
 
 async function pollPayment(paymentId, attempts = 20) {
@@ -369,7 +401,7 @@ function renderDevices() {
       <div class="device-ico">${PLATFORMS[d.platform] || '📱'}</div>
       <div class="device-info">
         <b>${esc(d.name)}</b>
-        <small>${d.is_active ? 'Активно' : 'Отключено'} · ${d.used_traffic_gb} ГБ трафика</small>
+        <small>${d.node_flag ? esc(d.node_flag) + ' ' + esc(d.node_title) + ' · ' : ''}${d.is_active ? 'Активно' : 'Отключено'} · ${d.used_traffic_gb} ГБ</small>
       </div>
       <button class="btn btn-sm btn-ghost" data-key="${d.id}">Ключ</button>
     </div>`).join('');
@@ -377,8 +409,15 @@ function renderDevices() {
     btn.addEventListener('click', () => openDeviceSheet(Number(btn.dataset.key))));
 }
 
-function openAddDevice() {
+async function openAddDevice() {
   if (!state.sub) return toast('Сначала оформите подписку');
+  try { state.nodes = await api('/api/nodes'); } catch (_) { state.nodes = []; }
+  const locations = state.nodes.length > 1 ? `
+      <div class="field"><label>Локация</label>
+        <select class="input" id="dev-node">
+          ${state.nodes.map((n) => `<option value="${n.id}" ${n.is_default ? 'selected' : ''}>
+            ${esc(n.flag)} ${esc(n.title)}</option>`).join('')}
+        </select></div>` : '';
   openSheet(`
     <div class="sheet-title">Новое устройство</div>
     <div class="stack">
@@ -394,15 +433,21 @@ function openAddDevice() {
           <option value="tv">Android TV</option>
           <option value="other">Другое</option>
         </select></div>
+      ${locations}
       <button class="btn btn-primary wide" id="dev-save">Создать ключ</button>
     </div>`);
   $('#dev-save').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     btn.disabled = true;
     try {
+      const nodeSelect = document.querySelector('#dev-node');
       const device = await api('/api/devices', {
         method: 'POST',
-        body: { name: $('#dev-name').value.trim() || 'Устройство', platform: $('#dev-platform').value },
+        body: {
+          name: $('#dev-name').value.trim() || 'Устройство',
+          platform: $('#dev-platform').value,
+          node_id: nodeSelect ? Number(nodeSelect.value) : null,
+        },
       });
       await refresh();
       openDeviceSheet(device.id);
@@ -422,6 +467,7 @@ function openDeviceSheet(deviceId) {
   openSheet(`
     <div class="sheet-title">${PLATFORMS[device.platform] || '📱'} ${esc(device.name)}</div>
     <p class="muted" style="margin-top:-6px;font-size:12.5px">
+      ${device.node_title ? esc(device.node_flag) + ' ' + esc(device.node_title) + ' · ' : ''}
       Вставьте ключ в клиент или импортируйте ссылку-подписку.</p>
     <div class="key-box" id="key-box">${esc(link) || 'Ключ выдаётся…'}</div>
     <div class="stack" style="margin-top:12px">

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
                                     create_async_engine)
 
 from .config import settings
-from .models import Base, Plan, Role, User
+from .models import Base, Node, Plan, Role, User
 
 engine = create_async_engine(settings.database_url, echo=False, pool_pre_ping=True)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
@@ -49,6 +49,17 @@ async def init_db() -> None:
         for data in DEFAULT_PLANS:
             if data["code"] not in existing:
                 session.add(Plan(**data))
+
+        nodes = (await session.execute(select(Node.id))).scalars().all()
+        if not nodes:
+            # Первый запуск: нода берётся из .env, дальше управляется из админки.
+            import json
+            session.add(Node(
+                code="main", title="Основная локация", flag="🌍",
+                url=settings.marzban_url, username=settings.marzban_username,
+                password=settings.marzban_password, verify_ssl=settings.marzban_verify_ssl,
+                inbounds_json=json.dumps(settings.marzban_inbounds, ensure_ascii=False),
+                is_active=True, is_default=True, sort_order=0))
 
         owner = (await session.execute(
             select(User).where(User.tg_id == settings.owner_id))).scalar_one_or_none()

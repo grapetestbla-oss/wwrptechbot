@@ -7,6 +7,7 @@ async function renderAdmin(tab) {
     if (tab === 'stats') return adminStats(body);
     if (tab === 'plans') return adminPlans(body);
     if (tab === 'users') return adminUsers(body);
+    if (tab === 'nodes') return adminNodes(body);
     if (tab === 'promos') return adminPromos(body);
     if (tab === 'logs') return adminLogs(body);
   } catch (err) {
@@ -29,8 +30,8 @@ async function adminStats(body) {
     </div>
     <div class="card">
       <div class="list-row" style="background:none;border:0;padding:0">
-        <div class="grow"><b>VPN-нода</b><small>Marzban API</small></div>
-        <span class="badge ${s.node_online ? 'ok' : 'bad'}">${s.node_online ? 'Онлайн' : 'Недоступна'}</span>
+        <div class="grow"><b>VPN-ноды</b><small>Marzban API · онлайн ${s.nodes_online} из ${s.nodes_total}</small></div>
+        <span class="badge ${s.node_online ? 'ok' : 'bad'}">${s.node_online ? 'Все онлайн' : 'Есть проблемы'}</span>
       </div>
     </div>
     <button class="btn btn-ghost wide" id="btn-broadcast">📢 Рассылка всем пользователям</button>
@@ -336,4 +337,106 @@ async function adminLogs(body) {
       <div class="grow"><b>${esc(l.action)} ${esc(l.target)}</b>
         <small>${esc(l.details || '')} · админ ${l.admin} · ${fmtDate(l.at)}</small></div>
     </div>`).join('') : '<div class="empty">Действий пока не было</div>';
+}
+
+
+/* --- Локации (ноды) --- */
+
+async function adminNodes(body) {
+  const nodes = await api('/api/admin/nodes?check=true');
+  body.innerHTML = `
+    <button class="btn btn-primary wide" id="node-new">+ Новая локация</button>
+    ${nodes.length ? nodes.map((n) => `
+      <div class="list-row">
+        <div class="device-ico">${esc(n.flag)}</div>
+        <div class="grow"><b>${esc(n.title)} ${n.is_default ? '· по умолчанию' : ''}</b>
+          <small>${esc(n.url || 'адрес не задан')} · устройств: ${n.devices}</small></div>
+        <span class="badge ${n.online ? 'ok' : 'bad'}">${n.online ? 'онлайн' : 'офлайн'}</span>
+        ${n.is_active ? '' : '<span class="badge bad">выкл</span>'}
+        <button class="btn btn-sm btn-ghost" data-node="${n.id}">✏️</button>
+      </div>`).join('') : '<div class="empty">Локаций нет</div>'}
+    <p class="muted" style="font-size:12px">
+      Отключённая локация не выдаётся новым устройствам, уже выданные ключи продолжают работать.</p>`;
+
+  document.querySelector('#node-new').addEventListener('click', () => nodeForm(null));
+  body.querySelectorAll('[data-node]').forEach((btn) => btn.addEventListener('click', () =>
+    nodeForm(nodes.find((n) => n.id === Number(btn.dataset.node)))));
+}
+
+function nodeForm(node) {
+  const v = node || { code: '', title: '', flag: '🇳🇱', country: '', url: '', username: 'admin',
+                      verify_ssl: true, inbounds_json: '{"vless": ["VLESS TCP REALITY"]}',
+                      is_active: true, is_default: false, sort_order: 10 };
+  openSheet(`
+    <div class="sheet-title">${node ? 'Локация: ' + esc(v.title) : 'Новая локация'}</div>
+    <div class="stack">
+      <div class="grid-2">
+        <div class="field"><label>Название</label>
+          <input class="input" id="nf-title" value="${esc(v.title)}" placeholder="Нидерланды" /></div>
+        <div class="field"><label>Код</label>
+          <input class="input" id="nf-code" value="${esc(v.code)}" ${node ? 'disabled' : ''} placeholder="nl" /></div>
+      </div>
+      <div class="grid-2">
+        <div class="field"><label>Флаг</label>
+          <input class="input" id="nf-flag" value="${esc(v.flag)}" maxlength="4" /></div>
+        <div class="field"><label>Страна</label>
+          <input class="input" id="nf-country" value="${esc(v.country)}" placeholder="Netherlands" /></div>
+      </div>
+      <div class="field"><label>Адрес панели Marzban</label>
+        <input class="input" id="nf-url" value="${esc(v.url)}" placeholder="https://node.example.com:8000" /></div>
+      <div class="grid-2">
+        <div class="field"><label>Логин панели</label>
+          <input class="input" id="nf-user" value="${esc(v.username)}" /></div>
+        <div class="field"><label>Пароль</label>
+          <input class="input" id="nf-pass" type="password" placeholder="${node ? 'не менять' : ''}" /></div>
+      </div>
+      <div class="field"><label>Инбаунды (JSON)</label>
+        <input class="input" id="nf-inb" value="${esc(v.inbounds_json)}" /></div>
+      <div class="field"><label>Порядок в списке</label>
+        <input class="input" id="nf-sort" type="number" value="${v.sort_order}" /></div>
+      <label class="muted" style="font-size:13px">
+        <input type="checkbox" id="nf-active" ${v.is_active ? 'checked' : ''} /> локация активна</label>
+      <label class="muted" style="font-size:13px">
+        <input type="checkbox" id="nf-default" ${v.is_default ? 'checked' : ''} /> выдавать по умолчанию</label>
+      <label class="muted" style="font-size:13px">
+        <input type="checkbox" id="nf-ssl" ${v.verify_ssl ? 'checked' : ''} /> проверять TLS-сертификат панели</label>
+      <button class="btn btn-primary wide" id="nf-save">Сохранить</button>
+      ${node ? '<button class="btn btn-danger wide" id="nf-off">Отключить локацию</button>' : ''}
+    </div>`);
+
+  document.querySelector('#nf-save').addEventListener('click', async (e) => {
+    const val = (id) => document.querySelector(id).value.trim();
+    const payload = {
+      id: node?.id ?? null,
+      code: (node?.code || val('#nf-code')).toLowerCase(),
+      title: val('#nf-title'),
+      flag: val('#nf-flag') || '🌍',
+      country: val('#nf-country'),
+      url: val('#nf-url'),
+      username: val('#nf-user'),
+      password: val('#nf-pass'),
+      inbounds_json: val('#nf-inb'),
+      sort_order: Number(document.querySelector('#nf-sort').value),
+      is_active: document.querySelector('#nf-active').checked,
+      is_default: document.querySelector('#nf-default').checked,
+      verify_ssl: document.querySelector('#nf-ssl').checked,
+    };
+    if (!payload.code || !payload.title || !payload.url) return toast('Заполните код, название и адрес');
+    e.currentTarget.disabled = true;
+    try {
+      await api('/api/admin/nodes', { method: 'POST', body: payload });
+      closeSheet();
+      toast('Локация сохранена');
+      renderAdmin('nodes');
+    } catch (err) { toast(err.message); e.currentTarget.disabled = false; }
+  });
+
+  document.querySelector('#nf-off')?.addEventListener('click', async () => {
+    if (!confirm('Отключить локацию? Новые устройства сюда выдаваться не будут.')) return;
+    try {
+      await api(`/api/admin/nodes/${node.id}`, { method: 'DELETE' });
+      closeSheet();
+      renderAdmin('nodes');
+    } catch (err) { toast(err.message); }
+  });
 }

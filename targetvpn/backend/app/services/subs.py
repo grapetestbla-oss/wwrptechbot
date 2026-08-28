@@ -7,9 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
-from ..marzban import MarzbanError, marzban
-from ..models import (AdminLog, Device, Notification, Plan, Subscription, User,
-                      utcnow)
+from ..marzban import MarzbanError, client_for, marzban
+from ..models import (AdminLog, Device, Node, Notification, Plan, Subscription,
+                      User, utcnow)
 
 log = logging.getLogger("subs")
 
@@ -92,6 +92,29 @@ async def revoke_subscription(session: AsyncSession, user: User) -> None:
     await session.commit()
 
 
+async def node_client(session: AsyncSession, device: Device):
+    """Клиент панели той ноды, на которой живёт устройство."""
+    if device.node_id:
+        node = (await session.execute(
+            select(Node).where(Node.id == device.node_id))).scalar_one_or_none()
+        if node:
+            return client_for(node)
+    return marzban
+
+
+async def pick_node(session: AsyncSession, node_id: int | None = None) -> Node | None:
+    """Выбранная локация, иначе нода по умолчанию, иначе первая активная."""
+    stmt = select(Node).where(Node.is_active.is_(True)).order_by(
+        Node.is_default.desc(), Node.sort_order, Node.id)
+    if node_id:
+        node = (await session.execute(select(Node).where(
+            Node.id == node_id, Node.is_active.is_(True)))).scalar_one_or_none()
+        if node is None:
+            raise ValueError("Локация недоступна")
+        return node
+    return (await session.execute(stmt)).scalars().first()
+
+
 def remote_username(user: User, index: int) -> str:
     return f"{settings.marzban_prefix}_{user.tg_id}_{index}"
 
@@ -113,15 +136,17 @@ async def sync_devices(session: AsyncSession, user: User,
     # Лишние устройства (после смены тарифа на меньший) — отключаем.
     for extra in devices[sub.devices:]:
         if extra.is_active:
-            await marzban.delete_user(extra.remote_username)
+            client = await node_client(session, extra)
+            await client.delete_user(extra.remote_username)
             extra.is_active = False
             extra.config_url = ""
 
     for device in devices[: sub.devices]:
         try:
-            data = await marzban.create_user(device.remote_username, expire_ts, per_device_gb,
-                                             note=f"tg:{user.tg_id}")
-            _apply_remote(device, data)
+            client = await node_client(session, device)
+            data = await client.create_user(device.remote_username, expire_ts, per_device_gb,
+                                            note=f"tg:{user.tg_id}")
+            _apply_remote(device, data, client.url)
             device.is_active = True
         except MarzbanError as exc:
             log.error("Синхронизация %s не удалась: %s", device.remote_username, exc)
@@ -134,14 +159,16 @@ async def disable_devices(session: AsyncSession, user: User) -> None:
         select(Device).where(Device.user_id == user.id))).scalars().all()
     for device in devices:
         try:
-            await marzban.update_user(device.remote_username, status="disabled")
+            client = await node_client(session, device)
+            await client.update_user(device.remote_username, status="disabled")
         except MarzbanError as exc:
             log.warning("Не удалось отключить %s: %s", device.remote_username, exc)
         device.is_active = False
     await session.flush()
 
 
-async def add_device(session: AsyncSession, user: User, name: str, platform: str) -> Device:
+async def add_device(session: AsyncSession, user: User, name: str, platform: str,
+                     node_id: int | None = None) -> Device:
     sub = await active_subscription(session, user)
     if sub is None:
         raise ValueError("Нет активной подписки")
@@ -157,15 +184,18 @@ async def add_device(session: AsyncSession, user: User, name: str, platform: str
     while remote_username(user, index) in taken:
         index += 1
 
+    node = await pick_node(session, node_id)
     device = Device(user_id=user.id, name=name[:64] or f"Устройство {index}",
-                    platform=platform, remote_username=remote_username(user, index))
+                    platform=platform, remote_username=remote_username(user, index),
+                    node_id=node.id if node else None)
     session.add(device)
     await session.flush()
 
-    data = await marzban.create_user(device.remote_username,
-                                     int(aware(sub.expires_at).timestamp()),
-                                     sub.traffic_gb, note=f"tg:{user.tg_id}")
-    _apply_remote(device, data)
+    client = client_for(node) if node else marzban
+    data = await client.create_user(device.remote_username,
+                                    int(aware(sub.expires_at).timestamp()),
+                                    sub.traffic_gb, note=f"tg:{user.tg_id}")
+    _apply_remote(device, data, client.url)
     await session.commit()
     await session.refresh(device)
     return device
@@ -177,34 +207,36 @@ async def remove_device(session: AsyncSession, user: User, device_id: int) -> No
                              Device.user_id == user.id))).scalar_one_or_none()
     if device is None:
         raise ValueError("Устройство не найдено")
-    await marzban.delete_user(device.remote_username)
+    client = await node_client(session, device)
+    await client.delete_user(device.remote_username)
     await session.delete(device)
     await session.commit()
 
 
 async def refresh_device(session: AsyncSession, device: Device) -> Device:
     """Перевыпускает ключ устройства (например, если конфиг утёк)."""
-    await marzban.delete_user(device.remote_username)
+    client = await node_client(session, device)
+    await client.delete_user(device.remote_username)
     user = (await session.execute(select(User).where(User.id == device.user_id))).scalar_one()
     sub = await active_subscription(session, user)
     if sub is None:
         raise ValueError("Нет активной подписки")
-    data = await marzban.create_user(device.remote_username,
-                                     int(aware(sub.expires_at).timestamp()),
-                                     sub.traffic_gb, note=f"tg:{user.tg_id}")
-    _apply_remote(device, data)
+    data = await client.create_user(device.remote_username,
+                                    int(aware(sub.expires_at).timestamp()),
+                                    sub.traffic_gb, note=f"tg:{user.tg_id}")
+    _apply_remote(device, data, client.url)
     await session.commit()
     return device
 
 
-def _apply_remote(device: Device, data: dict | None) -> None:
+def _apply_remote(device: Device, data: dict | None, base_url: str = "") -> None:
     if not data:
         return
     links = data.get("links") or []
     device.config_url = links[0] if links else device.config_url
     sub_url = data.get("subscription_url") or ""
     if sub_url and sub_url.startswith("/"):
-        sub_url = settings.marzban_url.rstrip("/") + sub_url
+        sub_url = (base_url or settings.marzban_url).rstrip("/") + sub_url
     device.remote_sub_url = sub_url
     device.used_traffic = float(data.get("used_traffic") or 0)
     device.synced_at = utcnow()

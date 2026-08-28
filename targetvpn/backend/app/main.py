@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .db import SessionLocal, init_db
 from .routers import admin, api, payments
+from .services.billing import lzt_check_pending, lzt_enabled
 from .services.subs import expire_pass
 
 logging.basicConfig(level=logging.INFO,
@@ -35,13 +36,29 @@ async def expiry_worker() -> None:
         await asyncio.sleep(300)
 
 
+async def lzt_worker() -> None:
+    """Опрашивает входящие переводы LZT Market и активирует оплаченные подписки."""
+    while True:
+        await asyncio.sleep(settings.lzt_poll_interval)
+        try:
+            async with SessionLocal() as session:
+                activated = await lzt_check_pending(session)
+                if activated:
+                    log.info("LZT Market: активировано подписок: %s", activated)
+        except Exception:  # noqa: BLE001 - воркер не должен умирать
+            log.exception("Ошибка опроса LZT Market")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    task = asyncio.create_task(expiry_worker())
+    tasks = [asyncio.create_task(expiry_worker())]
+    if lzt_enabled():
+        tasks.append(asyncio.create_task(lzt_worker()))
     log.info("TargetVPN backend запущен (demo_mode=%s)", settings.demo_mode)
     yield
-    task.cancel()
+    for task in tasks:
+        task.cancel()
 
 
 app = FastAPI(title="TargetVPN API", version="1.0.0", lifespan=lifespan)

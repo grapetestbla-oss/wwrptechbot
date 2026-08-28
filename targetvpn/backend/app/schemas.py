@@ -62,6 +62,8 @@ class DeviceOut(BaseModel):
     id: int
     name: str
     platform: str
+    node_title: str = ""
+    node_flag: str = ""
     config_url: str
     used_traffic_gb: float
     is_active: bool
@@ -75,16 +77,54 @@ class StateOut(BaseModel):
     sub_url: str = ""
     support_url: str = ""
     trial_available: bool = False
+    payment_methods: list[str] = []
 
 
 class DeviceCreate(BaseModel):
     name: str = "Устройство"
     platform: str = "other"
+    node_id: int | None = None
+
+
+class NodeOut(BaseModel):
+    id: int
+    code: str
+    title: str
+    flag: str
+    country: str
+    is_default: bool
+
+
+class NodeAdminOut(NodeOut):
+    url: str
+    username: str
+    verify_ssl: bool
+    inbounds_json: str
+    is_active: bool
+    sort_order: int
+    devices: int = 0
+    online: bool | None = None
+
+
+class NodeUpsert(BaseModel):
+    id: int | None = None
+    code: str
+    title: str
+    flag: str = "🌍"
+    country: str = ""
+    url: str
+    username: str
+    password: str = ""
+    verify_ssl: bool = True
+    inbounds_json: str = '{"vless": ["VLESS TCP REALITY"]}'
+    is_active: bool = True
+    is_default: bool = False
+    sort_order: int = 0
 
 
 class PurchaseRequest(BaseModel):
     plan_id: int
-    method: str = "stars"  # stars | cryptobot | balance
+    method: str = "stars"  # stars | cryptobot | lzt
     promo_code: str = ""
 
 
@@ -96,6 +136,7 @@ class PurchaseResponse(BaseModel):
     amount_rub: float = 0
     amount_native: float = 0
     currency: str = "RUB"
+    comment: str = ""
     activated: bool = False
 
 
@@ -182,6 +223,8 @@ class StatsOut(BaseModel):
     payments_total: int
     new_users_today: int
     node_online: bool
+    nodes_total: int = 0
+    nodes_online: int = 0
 
 
 AuthResponse.model_rebuild()

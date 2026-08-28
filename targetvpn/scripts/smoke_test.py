@@ -46,6 +46,10 @@ def make_init_data(tg_id: int, username: str) -> str:
     return urlencode(pairs)
 
 
+async def _as_coro(value):
+    return value
+
+
 def check(label: str, condition: bool, extra: str = "") -> None:
     mark = "✅" if condition else "❌"
     print(f"{mark} {label}" + (f" — {extra}" if extra else ""))
@@ -166,6 +170,101 @@ async def main() -> None:
 
             r = await c.post("/api/admin/role", headers=auth, json={"tg_id": 555002, "role": "admin"})
             check("роли меняет только владелец", r.status_code == 403)
+
+            # --- мультинода ---
+            r = await c.get("/api/admin/nodes", headers=oauth)
+            check("нода по умолчанию создана из .env", len(r.json()) == 1 and r.json()[0]["is_default"])
+
+            r = await c.post("/api/admin/nodes", headers=oauth, json={
+                "code": "nl", "title": "Нидерланды", "flag": "🇳🇱", "country": "Netherlands",
+                "url": "https://nl.example.com:8000", "username": "admin", "password": "pass",
+                "is_active": True, "is_default": True, "sort_order": 10})
+            check("создание локации", r.status_code == 200, r.text[:150])
+            nl_id = r.json()["id"]
+
+            r = await c.get("/api/admin/nodes", headers=oauth)
+            defaults = [n for n in r.json() if n["is_default"]]
+            check("нода по умолчанию только одна", len(defaults) == 1 and defaults[0]["id"] == nl_id)
+
+            r = await c.post("/api/admin/nodes", headers=oauth, json={
+                "code": "bad", "title": "Кривая", "url": "https://x", "username": "a",
+                "inbounds_json": "{не json}"})
+            check("некорректный JSON инбаундов отклонён", r.status_code == 400)
+
+            r = await c.get("/api/nodes", headers=auth)
+            check("пользователь видит список локаций", len(r.json()) == 2, r.text[:120])
+
+            # Расширяем лимит, чтобы проверить выдачу во второй локации.
+            await c.post("/api/admin/grant", headers=oauth,
+                         json={"tg_id": 555001, "hours": 48, "devices": 5,
+                               "title": "Тестовый расширенный"})
+            r = await c.post("/api/devices", headers=auth,
+                             json={"name": "NL key", "platform": "windows", "node_id": nl_id})
+            check("устройство создаётся в выбранной локации",
+                  r.status_code == 200 and r.json()["node_title"] == "Нидерланды", r.text[:150])
+            check("ключ ведёт на хост выбранной ноды", "nl.example.com" in r.json()["config_url"])
+            nl_device = r.json()["id"]
+
+            r = await c.post("/api/devices", headers=auth,
+                             json={"name": "Ghost", "platform": "ios", "node_id": 999})
+            check("несуществующая локация отклонена", r.status_code == 400)
+
+            r = await c.delete(f"/api/admin/nodes/{nl_id}", headers=oauth)
+            check("отключение локации", r.status_code == 200)
+            r = await c.get("/api/nodes", headers=auth)
+            check("отключённая локация не предлагается", len(r.json()) == 1)
+            r = await c.get("/api/state", headers=auth)
+            check("ключи на отключённой локации живы",
+                  any(d["id"] == nl_device for d in r.json()["devices"]))
+
+            # --- LZT Market ---
+            from app.services import billing as _billing
+            check("LZT выключен без токена", not _billing.lzt_enabled())
+            check("комментарий перевода уникален", _billing.lzt_comment(42) == "TVPN42")
+            comment, amount = _billing._lzt_extract(
+                {"data": {"comment": "TVPN42"}, "incoming_sum": "149.00"})
+            check("разбор входящего перевода", comment == "TVPN42" and amount == 149.0)
+            r = await c.post("/api/purchase", headers=auth,
+                             json={"plan_id": new_plan_id, "method": "lzt"})
+            check("оплата LZT недоступна без настройки", r.status_code == 400)
+
+            # Полный цикл LZT: счёт -> входящий перевод -> активация подписки.
+            from app.config import settings as _cfg
+            _cfg.lzt_token, _cfg.lzt_user_id, _cfg.lzt_username = "test", 1, "targetvpn"
+            r = await c.post("/api/purchase", headers=auth,
+                             json={"plan_id": new_plan_id, "method": "lzt"})
+            check("счёт LZT создан", r.status_code == 200 and r.json()["comment"].startswith("TVPN"),
+                  r.text[:150])
+            lzt_payment = r.json()
+
+            from app.db import SessionLocal as _Session
+            transfers = [{"data": {"comment": lzt_payment["comment"]},
+                          "incoming_sum": lzt_payment["amount_native"]}]
+            _billing.lzt_fetch_incoming = lambda limit=50: _as_coro(transfers)
+            async with _Session() as s2:
+                activated = await _billing.lzt_check_pending(s2)
+            check("перевод найден и подписка активирована", activated == 1, f"{activated}")
+
+            r = await c.get(f"/api/payments/{lzt_payment['payment_id']}", headers=auth)
+            check("платёж LZT помечен оплаченным", r.json()["paid"])
+
+            async with _Session() as s2:
+                check("повторный перевод не задваивает активацию",
+                      await _billing.lzt_check_pending(s2) == 0)
+
+            r = await c.post("/api/purchase", headers=auth,
+                             json={"plan_id": new_plan_id, "method": "lzt"})
+            short = r.json()
+            _billing.lzt_fetch_incoming = lambda limit=50: _as_coro(
+                [{"data": {"comment": short["comment"]}, "incoming_sum": 1}])
+            async with _Session() as s2:
+                check("недоплата не активирует подписку",
+                      await _billing.lzt_check_pending(s2) == 0)
+            _cfg.lzt_token, _cfg.lzt_user_id = "", 0
+
+            r = await c.get("/api/state", headers=auth)
+            check("список способов оплаты отдаётся",
+                  r.json()["payment_methods"] == ["stars"], r.json()["payment_methods"])
 
             r = await c.post("/api/admin/broadcast", headers=oauth, json={"text": "Привет"})
             check("рассылка ставится в очередь", r.json()["queued"] >= 2)

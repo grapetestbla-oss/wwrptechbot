@@ -49,6 +49,18 @@ class Settings(BaseSettings):
     rub_per_usdt: float = Field(default=100.0, alias="RUB_PER_USDT")
     rub_per_star: float = Field(default=1.6, alias="RUB_PER_STAR")
 
+    # LZT Market (lolz.live): оплата переводом на аккаунт с уникальным комментарием.
+    lzt_token: str = Field(default="", alias="LZT_TOKEN")
+    lzt_api: str = Field(default="https://prod-api.lzt.market", alias="LZT_API")
+    lzt_user_id: int = Field(default=0, alias="LZT_USER_ID")
+    lzt_username: str = Field(default="", alias="LZT_USERNAME")
+    # Шаблон ссылки на перевод: {username}, {user_id}, {amount}, {comment}.
+    lzt_transfer_url: str = Field(
+        default="https://lzt.market/balance/transfer/?username={username}&amount={amount}&comment={comment}",
+        alias="LZT_TRANSFER_URL")
+    # Как часто опрашивать входящие переводы, секунд.
+    lzt_poll_interval: int = Field(default=60, alias="LZT_POLL_INTERVAL")
+
     # --- Прочее ---
     trial_enabled: bool = Field(default=True, alias="TRIAL_ENABLED")
     referral_bonus_days: int = Field(default=7, alias="REFERRAL_BONUS_DAYS")
