@@ -262,6 +262,31 @@ async def main() -> None:
                       await _billing.lzt_check_pending(s2) == 0)
             _cfg.lzt_token, _cfg.lzt_user_id = "", 0
 
+            # --- запуск без ноды: ничего не продаём ---
+            r = await c.get("/api/admin/nodes", headers=oauth)
+            for node in r.json():
+                if node["is_active"]:
+                    await c.delete(f"/api/admin/nodes/{node['id']}", headers=oauth)
+            r = await c.get("/api/state", headers=auth)
+            check("без локаций сервис помечен как незапущенный",
+                  r.json()["nodes_ready"] is False and r.json()["trial_available"] is False)
+            r = await c.post("/api/purchase", headers=auth,
+                             json={"plan_id": new_plan_id, "method": "stars"})
+            check("без локаций оплата заблокирована", r.status_code == 400, r.text[:100])
+            # Свободный слот есть — значит откажет именно отсутствие локаций.
+            await c.post("/api/admin/grant", headers=oauth,
+                         json={"tg_id": 555001, "hours": 48, "devices": 9, "title": "Тест слотов"})
+            r = await c.post("/api/devices", headers=auth, json={"name": "X", "platform": "ios"})
+            check("без локаций устройство не создаётся",
+                  r.status_code == 400 and "окаци" in r.json()["detail"], r.text[:120])
+            r = await c.post("/api/admin/nodes", headers=oauth, json={
+                "code": "main", "id": 1, "title": "Основная локация",
+                "url": "https://demo.node.local:8000", "username": "admin", "password": "p",
+                "is_active": True, "is_default": True})
+            check("локация возвращена в строй", r.status_code == 200)
+            r = await c.get("/api/state", headers=auth)
+            check("сервис снова готов", r.json()["nodes_ready"] is True)
+
             r = await c.get("/api/state", headers=auth)
             check("список способов оплаты отдаётся",
                   r.json()["payment_methods"] == ["stars"], r.json()["payment_methods"])

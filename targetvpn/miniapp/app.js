@@ -4,7 +4,8 @@ const API = (location.origin.includes('localhost') || location.origin.startsWith
   ? location.origin : '';
 
 const state = { token: '', user: null, sub: null, devices: [], plans: [], nodes: [], subUrl: '',
-                trialAvailable: false, supportUrl: '', methods: [], promo: null, timer: null };
+                trialAvailable: false, nodesReady: true, supportUrl: '', methods: [],
+                promo: null, timer: null };
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -108,6 +109,7 @@ async function refresh() {
   state.supportUrl = data.support_url;
   state.trialAvailable = data.trial_available;
   state.methods = data.payment_methods || [];
+  state.nodesReady = data.nodes_ready !== false;
   renderHome();
   renderDevices();
   renderProfile();
@@ -162,6 +164,15 @@ function renderHome() {
     actions.innerHTML = `
       <button class="btn btn-primary wide" data-act="devices">📱 Мои ключи и устройства</button>
       <button class="btn btn-ghost wide" data-act="plans">💎 Продлить или сменить тариф</button>`;
+  } else if (!state.nodesReady) {
+    card.innerHTML = `
+      <div class="status-head">
+        <div class="status-state"><span class="dot"></span>Скоро запуск</div>
+      </div>
+      <div class="status-plan">Настраиваем серверы</div>
+      <div class="status-meta">Тарифы и пробный доступ включатся, как только заработает
+        первая локация. Бот пришлёт уведомление.</div>`;
+    actions.innerHTML = '';
   } else {
     card.innerHTML = `
       <div class="status-head">
@@ -228,7 +239,15 @@ async function loadPlans() {
   const paid = state.plans.filter((p) => !p.is_trial);
   if (!paid.length) { list.innerHTML = '<div class="empty">Тарифы скоро появятся</div>'; return; }
 
-  list.innerHTML = paid.map((plan) => {
+  const notice = state.nodesReady ? '' : `
+    <div class="card" style="border-color:rgba(255,176,32,.35)">
+      <b>⚙️ Идёт запуск сервиса</b>
+      <p class="muted" style="margin:6px 0 0;font-size:13px">
+        Серверы ещё настраиваются, оплата пока отключена. Оформить подписку можно будет
+        через несколько часов — бот сообщит.</p>
+    </div>`;
+
+  list.innerHTML = notice + paid.map((plan) => {
     const price = state.promo ? state.promo.prices[plan.id] ?? plan.price_rub : plan.price_rub;
     const old = plan.old_price_rub && plan.old_price_rub > price ? `<s>${plan.old_price_rub} ₽</s>` : '';
     return `
@@ -246,7 +265,8 @@ async function loadPlans() {
           <span class="prop">📱 ${plan.devices} ${plural(plan.devices, ['устройство', 'устройства', 'устройств'])}</span>
           <span class="prop">${plan.traffic_gb ? '📊 ' + plan.traffic_gb + ' ГБ' : '♾ Безлимит'}</span>
         </div>
-        <button class="btn btn-primary wide" data-buy="${plan.id}">Оформить за ${price} ₽</button>
+        <button class="btn btn-primary wide" data-buy="${plan.id}"
+          ${state.nodesReady ? '' : 'disabled'}>Оформить за ${price} ₽</button>
       </div>`;
   }).join('');
 
@@ -381,6 +401,12 @@ function renderDevices() {
   const limit = $('#devices-limit');
   const addBtn = $('#btn-add-device');
 
+  if (!state.nodesReady) {
+    limit.textContent = 'Локации ещё подключаются — ключи станут доступны после запуска.';
+    list.innerHTML = '<div class="empty">Сервис запускается</div>';
+    addBtn.classList.add('hidden');
+    return;
+  }
   if (!state.sub) {
     limit.textContent = 'Устройства доступны после оформления подписки.';
     list.innerHTML = '<div class="empty">Нет активной подписки</div>';

@@ -41,6 +41,13 @@ def plan_out(plan: Plan) -> PlanOut:
     )
 
 
+async def nodes_ready(session: AsyncSession) -> bool:
+    """Есть ли хотя бы одна настроенная локация — до этого продавать нечего."""
+    node = (await session.execute(select(Node).where(
+        Node.is_active.is_(True), Node.url != ""))).scalars().first()
+    return node is not None
+
+
 def available_payment_methods() -> list[str]:
     methods = []
     if settings.bot_token:
@@ -98,6 +105,7 @@ async def state(user: User = Depends(current_user), session: AsyncSession = Depe
 
     trial_plan = (await session.execute(select(Plan).where(
         Plan.is_trial.is_(True), Plan.is_active.is_(True)))).scalars().first()
+    ready = await nodes_ready(session)
     return StateOut(
         user=user_out(user, referrals),
         subscription=sub_out,
@@ -105,7 +113,8 @@ async def state(user: User = Depends(current_user), session: AsyncSession = Depe
         sub_url=f"{settings.public_base_url.rstrip('/')}/sub/{user.sub_token}",
         support_url=settings.support_url,
         trial_available=bool(settings.trial_enabled and trial_plan and not user.trial_used
-                             and sub is None),
+                             and sub is None and ready),
+        nodes_ready=ready,
         payment_methods=available_payment_methods(),
     )
 
@@ -120,7 +129,7 @@ async def plans(user: User = Depends(current_user), session: AsyncSession = Depe
 
 @router.get("/nodes", response_model=list[NodeOut])
 async def nodes(user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
-    rows = (await session.execute(select(Node).where(Node.is_active.is_(True))
+    rows = (await session.execute(select(Node).where(Node.is_active.is_(True), Node.url != "")
                                   .order_by(Node.sort_order, Node.id))).scalars().all()
     return [NodeOut(id=n.id, code=n.code, title=n.title, flag=n.flag, country=n.country,
                     is_default=n.is_default) for n in rows]
@@ -129,6 +138,8 @@ async def nodes(user: User = Depends(current_user), session: AsyncSession = Depe
 @router.post("/trial", response_model=SubscriptionOut)
 async def activate_trial(user: User = Depends(current_user),
                          session: AsyncSession = Depends(get_session)):
+    if not await nodes_ready(session):
+        raise HTTPException(400, "Сервис ещё запускается — попробуйте немного позже")
     if not settings.trial_enabled:
         raise HTTPException(400, "Пробный период отключён")
     if user.trial_used:
@@ -203,6 +214,8 @@ async def promo_check(payload: PromoCheck, user: User = Depends(current_user),
 @router.post("/purchase", response_model=PurchaseResponse)
 async def purchase(payload: PurchaseRequest, user: User = Depends(current_user),
                    session: AsyncSession = Depends(get_session)):
+    if not await nodes_ready(session):
+        raise HTTPException(400, "Сервис ещё запускается — оплата временно недоступна")
     plan = (await session.execute(select(Plan).where(
         Plan.id == payload.plan_id, Plan.is_active.is_(True)))).scalar_one_or_none()
     if plan is None:

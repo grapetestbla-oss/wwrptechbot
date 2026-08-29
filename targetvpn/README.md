@@ -44,16 +44,21 @@ backend/            FastAPI: API мини-аппа, админка, вебхук
   app/marzban.py    клиент панели на VPN-ноде
 bot/bot.py          aiogram-бот: вход в Mini App, оплата звёздами, уведомления
 miniapp/            Mini App без сборки: index.html · styles.css · app.js · admin.js
-deploy/             systemd, nginx, docker-compose, NODE_SETUP.md
-scripts/smoke_test.py  сквозная проверка всех сценариев без ноды и Telegram
+deploy/             install.sh, systemd, nginx, docker-compose,
+                    DEPLOY.md (основной ВПС) · NODE_SETUP.md (VPN-нода)
+scripts/            smoke_test.py (сквозные тесты) · check_config.py (диагностика)
 ```
 
 ## Запуск
 
+Быстрый путь — `deploy/DEPLOY.md`: один скрипт `deploy/install.sh` поднимает
+бота и Mini App на основном ВПС. VPN-нода добавляется позже из админки; пока её
+нет, оплата и пробный доступ отключены, а приложение показывает «идёт запуск».
+
 ### 1. VPN-нода (второй ВПС)
 Следуйте `deploy/NODE_SETUP.md` — Marzban, инбаунд Reality, файрвол.
 
-### 2. Основной ВПС
+### 2. Основной ВПС (ручная установка)
 
 ```bash
 git clone <repo> /opt/targetvpn && cd /opt/targetvpn/targetvpn
@@ -83,7 +88,8 @@ systemctl enable --now targetvpn-api targetvpn-bot
 ### 4. Проверка
 
 ```bash
-.venv/bin/python scripts/smoke_test.py     # 30+ проверок в демо-режиме, без ноды
+.venv/bin/python scripts/smoke_test.py     # 60+ проверок в демо-режиме, без ноды
+.venv/bin/python scripts/check_config.py   # диагностика боевой установки
 ```
 
 `DEMO_MODE=true` позволяет крутить весь сервис локально: ключи генерируются

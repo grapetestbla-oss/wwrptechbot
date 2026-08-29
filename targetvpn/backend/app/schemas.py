@@ -77,6 +77,7 @@ class StateOut(BaseModel):
     sub_url: str = ""
     support_url: str = ""
     trial_available: bool = False
+    nodes_ready: bool = False
     payment_methods: list[str] = []
 
 

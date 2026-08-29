@@ -104,15 +104,19 @@ async def node_client(session: AsyncSession, device: Device):
 
 async def pick_node(session: AsyncSession, node_id: int | None = None) -> Node | None:
     """Выбранная локация, иначе нода по умолчанию, иначе первая активная."""
-    stmt = select(Node).where(Node.is_active.is_(True)).order_by(
+    ready = Node.url != ""
+    stmt = select(Node).where(Node.is_active.is_(True), ready).order_by(
         Node.is_default.desc(), Node.sort_order, Node.id)
     if node_id:
         node = (await session.execute(select(Node).where(
-            Node.id == node_id, Node.is_active.is_(True)))).scalar_one_or_none()
+            Node.id == node_id, Node.is_active.is_(True), ready))).scalar_one_or_none()
         if node is None:
             raise ValueError("Локация недоступна")
         return node
-    return (await session.execute(stmt)).scalars().first()
+    node = (await session.execute(stmt)).scalars().first()
+    if node is None:
+        raise ValueError("Локации ещё подключаются — попробуйте чуть позже")
+    return node
 
 
 def remote_username(user: User, index: int) -> str:

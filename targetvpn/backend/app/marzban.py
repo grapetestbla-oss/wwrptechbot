@@ -41,7 +41,14 @@ class MarzbanClient:
 
     @property
     def enabled(self) -> bool:
+        """Ходить на реальную панель. В демо-режиме и без адреса — не ходим."""
         return bool(self.url) and not settings.demo_mode
+
+    def _offline(self) -> dict:
+        """Что отдавать, когда реального запроса не будет."""
+        if settings.demo_mode:
+            return _demo_user("", self.url)
+        raise MarzbanError("Адрес панели Marzban не задан — локация ещё не подключена")
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(base_url=self.url, verify=self.verify_ssl, timeout=20.0)
@@ -79,13 +86,13 @@ class MarzbanClient:
 
     async def get_user(self, username: str) -> dict | None:
         if not self.enabled:
-            return _demo_user(username, self.url)
+            return _demo_user(username, self.url) if settings.demo_mode else self._offline()
         return await self._request("GET", f"/api/user/{username}")
 
     async def create_user(self, username: str, expire_ts: int, traffic_gb: int = 0,
                           note: str = "") -> dict:
         if not self.enabled:
-            return _demo_user(username, self.url)
+            return _demo_user(username, self.url) if settings.demo_mode else self._offline()
         if await self._request("GET", f"/api/user/{username}"):
             return await self.update_user(username, expire_ts=expire_ts, traffic_gb=traffic_gb,
                                           status="active")
@@ -104,7 +111,7 @@ class MarzbanClient:
     async def update_user(self, username: str, expire_ts: int | None = None,
                           traffic_gb: int | None = None, status: str | None = None) -> dict:
         if not self.enabled:
-            return _demo_user(username, self.url)
+            return _demo_user(username, self.url) if settings.demo_mode else self._offline()
         payload: dict[str, Any] = {}
         if expire_ts is not None:
             payload["expire"] = expire_ts
@@ -129,7 +136,9 @@ class MarzbanClient:
 
     async def system_stats(self) -> dict:
         if not self.enabled:
-            return {"demo": True}
+            if settings.demo_mode:
+                return {"demo": True}
+            raise MarzbanError("Локация не настроена")
         return await self._request("GET", "/api/system") or {}
 
 

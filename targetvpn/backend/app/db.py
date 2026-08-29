@@ -51,12 +51,13 @@ async def init_db() -> None:
                 session.add(Plan(**data))
 
         nodes = (await session.execute(select(Node.id))).scalars().all()
-        if not nodes:
+        if not nodes and (settings.marzban_url or settings.demo_mode):
             # Первый запуск: нода берётся из .env, дальше управляется из админки.
             import json
             session.add(Node(
                 code="main", title="Основная локация", flag="🌍",
-                url=settings.marzban_url, username=settings.marzban_username,
+                url=settings.marzban_url or "https://demo.node.local:8000",
+                username=settings.marzban_username,
                 password=settings.marzban_password, verify_ssl=settings.marzban_verify_ssl,
                 inbounds_json=json.dumps(settings.marzban_inbounds, ensure_ascii=False),
                 is_active=True, is_default=True, sort_order=0))
