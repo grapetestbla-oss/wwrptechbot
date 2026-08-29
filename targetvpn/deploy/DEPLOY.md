@@ -16,10 +16,16 @@
 
 ```bash
 apt update && apt install -y git
-git clone https://github.com/grapetestbla-oss/wwrptechbot.git /tmp/tv
-cd /tmp/tv/targetvpn
+git clone -b claude/telegram-vpn-mini-app-jn457e \
+  https://github.com/grapetestbla-oss/wwrptechbot.git /opt/targetvpn-src
+cd /opt/targetvpn-src/targetvpn
 bash deploy/install.sh
 ```
+
+**Важно про ветку:** код лежит в ветке `claude/telegram-vpn-mini-app-jn457e`,
+в `main` его пока нет. Без флага `-b` склонируется пустой `main` и команда
+`cd .../targetvpn` выдаст «No such file or directory». Если смёржите ветку в
+`main` — флаг больше не нужен.
 
 Скрипт спросит домен, токен бота и ваш Telegram ID, дальше сделает всё сам:
 поставит зависимости, создаст пользователя `targetvpn` и `/opt/targetvpn`,
@@ -63,11 +69,17 @@ journalctl -u targetvpn-api -f                   # логи API
 
 ### Обновление
 
+Обновляемся из того же клона, откуда ставили (`/opt/targetvpn-src`). Повторный
+запуск установщика ничего не переспрашивает и не трогает `.env`, nginx и
+сертификат — только обновляет код, зависимости и перезапускает сервисы:
+
 ```bash
-cd /opt/targetvpn && git pull
-.venv/bin/pip install -q -r backend/requirements.txt -r bot/requirements.txt
-systemctl restart targetvpn-api targetvpn-bot
+cd /opt/targetvpn-src && git pull origin claude/telegram-vpn-mini-app-jn457e
+cd targetvpn && bash deploy/install.sh
 ```
+
+Клон потерялся — просто склонируйте заново той же командой из раздела
+«Установка», `.env` в `/opt/targetvpn` останется нетронутым.
 
 ### Бэкап
 

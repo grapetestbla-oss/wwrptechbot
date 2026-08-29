@@ -14,6 +14,15 @@ die()  { printf "\033[1;31mОшибка: %s\033[0m\n" "$*" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || die "запустите от root (sudo bash deploy/install.sh)"
 
 # --- 1. Ввод параметров ---------------------------------------------------
+# Повторный запуск (обновление) не переспрашивает — берём всё из готового .env.
+REUSE=0
+if [[ -f "$APP_DIR/.env" ]]; then
+  REUSE=1
+  DOMAIN=$(sed -n 's#^PUBLIC_BASE_URL=https\?://##p' "$APP_DIR/.env" | tr -d '\r')
+  say "Найден $APP_DIR/.env — обновляем установку ($DOMAIN), настройки не трогаем"
+fi
+
+if [[ $REUSE -eq 0 ]]; then
 read -rp "Домен для Mini App (например vpn.example.com; пусто — использовать IP через nip.io): " DOMAIN
 read -rp "Токен бота от @BotFather: " BOT_TOKEN
 BOT_USERNAME=$(curl -fsS "https://api.telegram.org/bot${BOT_TOKEN}/getMe" 2>/dev/null \
@@ -37,6 +46,7 @@ if [[ -z "$DOMAIN" ]]; then
   DOMAIN="${PUBLIC_IP//./-}.nip.io"
   warn "Домен не указан, используем $DOMAIN (nip.io резолвится в ваш IP)"
 fi
+fi  # конец блока первичной настройки
 
 # --- 2. Пакеты ------------------------------------------------------------
 say "Ставим системные пакеты"
@@ -59,8 +69,8 @@ python3 -m venv .venv
 .venv/bin/pip install -q -r backend/requirements.txt -r bot/requirements.txt
 
 # --- 4. Конфигурация ------------------------------------------------------
-if [[ -f .env ]]; then
-  warn ".env уже существует — оставляем как есть (бэкап в .env.bak)"
+if [[ $REUSE -eq 1 ]]; then
+  say "Конфигурация сохранена без изменений (бэкап .env.bak)"
   cp .env .env.bak
 else
   say "Генерируем .env"
@@ -112,9 +122,13 @@ say "Регистрируем сервисы systemd"
 install -m 644 deploy/targetvpn-api.service /etc/systemd/system/
 install -m 644 deploy/targetvpn-bot.service /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now targetvpn-api targetvpn-bot
+systemctl enable targetvpn-api targetvpn-bot >/dev/null
+systemctl restart targetvpn-api targetvpn-bot
 
 # --- 6. nginx -------------------------------------------------------------
+if [[ $REUSE -eq 1 ]]; then
+  say "nginx уже настроен — пропускаем"
+else
 say "Настраиваем nginx для $DOMAIN"
 sed "s/vpn.example.com/${DOMAIN}/g" deploy/nginx.conf > /etc/nginx/sites-available/targetvpn
 # До выпуска сертификата оставляем только HTTP, иначе nginx не стартует.
@@ -134,6 +148,7 @@ EOF
 ln -sf /etc/nginx/sites-available/targetvpn /etc/nginx/sites-enabled/targetvpn
 rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
+fi
 
 # --- 7. Файрвол -----------------------------------------------------------
 say "Открываем порты"
@@ -143,7 +158,7 @@ ufw allow 443/tcp >/dev/null 2>&1 || true
 yes | ufw enable >/dev/null 2>&1 || true
 
 # --- 8. TLS ---------------------------------------------------------------
-if [[ "$WANT_TLS" =~ ^[YyДд]?$ ]]; then
+if [[ $REUSE -eq 0 && "$WANT_TLS" =~ ^[YyДд]?$ ]]; then
   say "Выпускаем сертификат Let's Encrypt"
   apt-get install -yqq certbot python3-certbot-nginx >/dev/null
   if certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos \

@@ -61,7 +61,7 @@ scripts/            smoke_test.py (сквозные тесты) · check_config.
 ### 2. Основной ВПС (ручная установка)
 
 ```bash
-git clone <repo> /opt/targetvpn && cd /opt/targetvpn/targetvpn
+git clone -b claude/telegram-vpn-mini-app-jn457e <repo> /opt/targetvpn-src && cd /opt/targetvpn-src/targetvpn
 python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt -r bot/requirements.txt
 cp .env.example .env && nano .env          # токены, доступы к ноде, домен
 .venv/bin/uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
