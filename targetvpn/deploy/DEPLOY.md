@@ -133,3 +133,36 @@ tar czf ~/targetvpn-backup-$(date +%F).tar.gz -C /opt/targetvpn data .env
 - Секреты `JWT_SECRET` и `INTERNAL_SECRET` генерируются при установке случайно;
   менять их вручную не нужно (после смены `JWT_SECRET` у всех разлогинится
   Mini App — это безопасно).
+
+## Удаление с сервера
+
+```bash
+cd /opt/targetvpn-src/targetvpn && bash deploy/uninstall.sh
+```
+
+Клона уже нет — скачайте только скрипт:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/grapetestbla-oss/wwrptechbot/\
+claude/telegram-vpn-mini-app-jn457e/targetvpn/deploy/uninstall.sh | bash
+```
+
+Скрипт останавливает и удаляет сервисы, убирает свой блок из Caddy или nginx,
+стирает `/opt/targetvpn` и `/opt/targetvpn-src`, удаляет системного пользователя
+`targetvpn` и в конце показывает, что ничего не осталось. Чужие сайты, их
+сертификаты и системные пакеты не трогаются.
+
+Перед удалением база и `.env` складываются в `/root/targetvpn-backup-ДАТА.tar.gz`
+(отключается через `TVPN_BACKUP=0`). Этот архив — всё, что нужно для переезда:
+на новом сервере поставьте проект заново и распакуйте архив поверх:
+
+```bash
+systemctl stop targetvpn-api targetvpn-bot
+tar xzf targetvpn-backup-ДАТА.tar.gz -C /opt/targetvpn
+# в .env поправьте WEBAPP_URL, PUBLIC_BASE_URL и CORS_ORIGINS на новый домен
+chown -R targetvpn:targetvpn /opt/targetvpn
+systemctl start targetvpn-api targetvpn-bot
+```
+
+Отдельно уберите A-запись домена и Web App в @BotFather (`/myapps`,
+Bot Settings → Menu Button), если они больше не нужны.
