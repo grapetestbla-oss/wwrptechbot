@@ -1,0 +1,497 @@
+<title>От промпта к прошивке</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  :root{
+    --bg:#E7ECEA;
+    --surface:#F7FAF9;
+    --sunken:#DDE4E2;
+    --ink:#0F1718;
+    --ink-2:#374647;
+    --muted:#61716F;
+    --line:#C6D1CE;
+    --line-soft:#D9E2E0;
+    --signal:#0B7B76;
+    --signal-soft:#B9DBD7;
+    --solder:#A94D24;
+    --solder-soft:#F0D9CC;
+    --panel-ink:#0F1718;
+    --panel-fg:#E7ECEA;
+    --shadow:0 1px 0 rgba(15,23,24,.05);
+    --f-display:"Unbounded","Golos Text",system-ui,sans-serif;
+    --f-body:"Golos Text","Segoe UI",system-ui,sans-serif;
+    --f-mono:"JetBrains Mono",ui-monospace,"Cascadia Mono",monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0D1214;
+      --surface:#141B1D;
+      --sunken:#0A0F10;
+      --ink:#E4EAE8;
+      --ink-2:#BAC7C5;
+      --muted:#849593;
+      --line:#293436;
+      --line-soft:#1E282A;
+      --signal:#35B8AE;
+      --signal-soft:#123734;
+      --solder:#E3814F;
+      --solder-soft:#3A2116;
+      --panel-ink:#050809;
+      --panel-fg:#DCE5E3;
+      --shadow:0 1px 0 rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0D1214;
+    --surface:#141B1D;
+    --sunken:#0A0F10;
+    --ink:#E4EAE8;
+    --ink-2:#BAC7C5;
+    --muted:#849593;
+    --line:#293436;
+    --line-soft:#1E282A;
+    --signal:#35B8AE;
+    --signal-soft:#123734;
+    --solder:#E3814F;
+    --solder-soft:#3A2116;
+    --panel-ink:#050809;
+    --panel-fg:#DCE5E3;
+    --shadow:0 1px 0 rgba(0,0,0,.4);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--f-body);
+    font-size:15px;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .shell{max-width:1180px;margin:0 auto;padding:28px 20px 64px}
+
+  /* ---------- masthead ---------- */
+  .masthead{display:flex;flex-direction:column;gap:20px;padding-bottom:22px;border-bottom:1px solid var(--line)}
+  .eyebrow{
+    font-family:var(--f-mono);font-size:11px;font-weight:500;
+    letter-spacing:.16em;text-transform:uppercase;color:var(--muted);
+  }
+  h1{
+    font-family:var(--f-display);font-weight:700;
+    font-size:clamp(30px,5.2vw,52px);line-height:1.02;letter-spacing:-.02em;
+    margin:6px 0 0;text-wrap:balance;
+  }
+  .lede{max-width:60ch;color:var(--ink-2);font-size:16px;margin:12px 0 0}
+  .lede b{color:var(--ink);font-weight:600}
+
+  .gauge{
+    display:grid;grid-template-columns:1fr auto;gap:14px 24px;align-items:end;
+    background:var(--surface);border:1px solid var(--line);border-radius:3px;
+    padding:16px 18px;box-shadow:var(--shadow);
+  }
+  .gauge-now{min-width:0}
+  .gauge-now .label{font-family:var(--f-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .gauge-now .val{font-family:var(--f-display);font-weight:500;font-size:17px;line-height:1.25;margin-top:5px;text-wrap:balance}
+  .gauge-now .val em{font-style:normal;color:var(--solder);font-family:var(--f-mono);font-weight:700;font-size:15px;margin-right:8px}
+  .gauge-pct{font-family:var(--f-mono);font-weight:700;font-size:34px;line-height:1;font-variant-numeric:tabular-nums;color:var(--signal);text-align:right}
+  .gauge-pct span{display:block;font-size:11px;font-weight:400;letter-spacing:.12em;color:var(--muted);margin-top:6px;text-transform:uppercase}
+  .scale{grid-column:1/-1;display:flex;gap:3px;height:10px}
+  .scale i{flex:1;background:var(--sunken);border-radius:1px;transition:background .18s ease}
+  .scale i.on{background:var(--signal)}
+  .scale i.cur{background:var(--solder)}
+
+  /* ---------- layout ---------- */
+  .board{display:grid;grid-template-columns:250px minmax(0,1fr);gap:34px;margin-top:30px;align-items:start}
+  @media (max-width:860px){.board{grid-template-columns:1fr;gap:22px}}
+
+  /* ---------- rail ---------- */
+  .rail{display:flex;flex-direction:column;gap:2px;position:sticky;top:18px}
+  @media (max-width:860px){
+    .rail{position:static;flex-direction:row;overflow-x:auto;gap:8px;padding-bottom:6px;scrollbar-width:thin}
+  }
+  .rail-head{font-family:var(--f-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:0 0 10px}
+  @media (max-width:860px){.rail-head{display:none}}
+  .stage-btn{
+    display:block;width:100%;text-align:left;background:none;border:0;
+    border-left:2px solid var(--line-soft);padding:10px 12px;cursor:pointer;
+    color:var(--muted);font-family:var(--f-body);transition:border-color .15s,color .15s;
+  }
+  @media (max-width:860px){
+    .stage-btn{width:auto;flex:0 0 auto;min-width:150px;border-left:0;border-top:2px solid var(--line-soft)}
+  }
+  .stage-btn:hover{color:var(--ink)}
+  .stage-btn:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+  .stage-btn .num{font-family:var(--f-mono);font-size:11px;font-weight:700;letter-spacing:.1em;display:block}
+  .stage-btn .nm{display:block;font-size:14px;font-weight:500;color:var(--ink-2);margin-top:2px;line-height:1.3}
+  .stage-btn .bar{display:block;height:3px;background:var(--sunken);margin-top:8px;border-radius:1px;overflow:hidden}
+  .stage-btn .bar b{display:block;height:100%;background:var(--signal);width:0;transition:width .25s ease}
+  .stage-btn[aria-selected="true"]{border-color:var(--solder);color:var(--ink)}
+  .stage-btn[aria-selected="true"] .num{color:var(--solder)}
+  .stage-btn[aria-selected="true"] .nm{color:var(--ink);font-weight:600}
+  .stage-btn.done .num{color:var(--signal)}
+
+  /* ---------- stage panel ---------- */
+  .stage-head{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:14px}
+  .stage-head .idx{font-family:var(--f-mono);font-size:12px;font-weight:700;letter-spacing:.12em;color:var(--solder)}
+  .stage-head h2{font-family:var(--f-display);font-weight:700;font-size:clamp(21px,3vw,28px);letter-spacing:-.015em;margin:0;flex:1 1 260px;text-wrap:balance}
+  .stage-head .weeks{font-family:var(--f-mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .goal{margin:16px 0 0;color:var(--ink-2);max-width:66ch}
+  .goal strong{color:var(--ink);font-weight:600}
+
+  .trap{
+    display:flex;gap:12px;margin:18px 0 4px;padding:12px 14px;
+    background:var(--solder-soft);border-radius:3px;font-size:14px;color:var(--ink);max-width:70ch;
+  }
+  .trap .tag{font-family:var(--f-mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--solder);flex:0 0 auto;padding-top:2px}
+
+  .mods{margin:22px 0 0;display:flex;flex-direction:column}
+  .mod{display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;padding:16px 0;border-top:1px solid var(--line-soft)}
+  .mod:first-child{border-top:0;padding-top:4px}
+  .tick{
+    width:22px;height:22px;margin-top:2px;flex:0 0 auto;border:1.5px solid var(--line);
+    background:var(--surface);border-radius:2px;cursor:pointer;padding:0;position:relative;
+    transition:background .15s,border-color .15s;
+  }
+  .tick:hover{border-color:var(--signal)}
+  .tick:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+  .tick::after{
+    content:"";position:absolute;left:6px;top:2px;width:6px;height:12px;
+    border:solid var(--surface);border-width:0 2px 2px 0;transform:rotate(42deg) scale(.4);
+    opacity:0;transition:opacity .15s,transform .15s;
+  }
+  .tick[aria-pressed="true"]{background:var(--signal);border-color:var(--signal)}
+  .tick[aria-pressed="true"]::after{opacity:1;transform:rotate(42deg) scale(1)}
+  .mod-body{min-width:0}
+  .mod-t{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+  .mod-t .id{font-family:var(--f-mono);font-size:12px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
+  .mod-t h3{margin:0;font-size:16px;font-weight:600;line-height:1.3;font-family:var(--f-body)}
+  .mod.is-done .mod-t h3{color:var(--muted)}
+  .mod.is-done .mod-t .id{color:var(--signal)}
+  .mod.is-now .mod-t .id{color:var(--solder)}
+  .mod.is-now .mod-t h3::after{
+    content:"сейчас";font-family:var(--f-mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--solder);border:1px solid var(--solder);border-radius:2px;padding:1px 5px;margin-left:9px;vertical-align:2px;
+  }
+  .mod p{margin:6px 0 0;color:var(--ink-2);max-width:68ch;font-size:14.5px}
+  .proof{
+    margin-top:9px;font-size:14px;color:var(--ink);border-left:2px solid var(--signal-soft);
+    padding:2px 0 2px 12px;max-width:66ch;
+  }
+  .proof b{font-family:var(--f-mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--signal);display:block;margin-bottom:2px}
+  .proof code{font-family:var(--f-mono);font-size:13px;background:var(--sunken);padding:1px 5px;border-radius:2px}
+
+  .links{display:flex;flex-wrap:wrap;gap:8px;margin-top:26px;padding-top:16px;border-top:1px solid var(--line)}
+  .links a{
+    font-family:var(--f-mono);font-size:12px;color:var(--ink-2);text-decoration:none;
+    border:1px solid var(--line);border-radius:2px;padding:5px 9px;transition:border-color .15s,color .15s;
+  }
+  .links a:hover{border-color:var(--signal);color:var(--signal)}
+  .links a:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+
+  /* ---------- rules panel ---------- */
+  .rules{background:var(--panel-ink);color:var(--panel-fg);border-radius:4px;padding:34px 30px;margin-top:52px}
+  .rules h2{font-family:var(--f-display);font-weight:700;font-size:clamp(22px,3.4vw,32px);letter-spacing:-.02em;margin:8px 0 0;color:#fff;text-wrap:balance}
+  .rules .eyebrow{color:#7E918E}
+  .rules p.sub{color:#9DAFAC;max-width:58ch;margin:12px 0 0}
+  .rule-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:26px 30px;margin-top:30px}
+  .rule .n{font-family:var(--f-mono);font-size:11px;font-weight:700;letter-spacing:.14em;color:#E3814F}
+  .rule h4{font-family:var(--f-display);font-weight:500;font-size:16px;margin:8px 0 6px;color:#fff}
+  .rule p{margin:0;font-size:14px;color:#9DAFAC;line-height:1.5}
+
+  /* ---------- footer ---------- */
+  .foot{margin-top:44px;padding-top:20px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:16px 40px;justify-content:space-between;align-items:flex-start}
+  .foot p{margin:0;font-size:13.5px;color:var(--muted);max-width:52ch}
+  .foot .sync{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+  .foot .sync b{color:var(--signal);font-weight:500}
+
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="shell">
+  <header class="masthead">
+    <div>
+      <div class="eyebrow">Личный маршрут · Python → боты → железо → ПЛК</div>
+      <h1>От промпта к прошивке</h1>
+      <p class="lede">Шесть этапов от «нейронка написала» до <b>«я написал сам»</b>. Каждый модуль заканчивается не видеоуроком, а работающей штукой, которую ты набрал руками. Учебные задачи привязаны к твоему боту <b>wwrptechbot</b> — доучиваешься и одновременно чинишь свой проект.</p>
+    </div>
+    <div class="gauge">
+      <div class="gauge-now">
+        <div class="label">Следующий шаг</div>
+        <div class="val" id="now">—</div>
+      </div>
+      <div class="gauge-pct"><span id="pctv">0%</span><span id="cnt">0 из 0 модулей</span></div>
+      <div class="scale" id="scale"></div>
+    </div>
+  </header>
+
+  <div class="board">
+    <nav class="rail" id="rail" role="tablist" aria-label="Этапы маршрута">
+      <div class="rail-head">Этапы</div>
+    </nav>
+    <main class="stage" id="stage"></main>
+  </div>
+
+  <section class="rules">
+    <div class="eyebrow">Правила стенда</div>
+    <h2>Как перестать вайб-кодить</h2>
+    <p class="sub">Нейронка — это не запрет, это инструмент. Вопрос в том, кто кого использует. Пять правил, которые превращают её из автора кода в справочник.</p>
+    <div class="rule-grid">
+      <div class="rule">
+        <div class="n">ПРАВИЛО 01</div>
+        <h4>Пустой файл</h4>
+        <p>Каждый модуль начинается с пустого файла. Не «поправь мне вот это», а Ctrl+N и первая строка с нуля. Копипаста не считается пройденным модулем.</p>
+      </div>
+      <div class="rule">
+        <div class="n">ПРАВИЛО 02</div>
+        <h4>20 минут своими силами</h4>
+        <p>Застрял — 20 минут сам: прочитал traceback до конца, открыл документацию, расставил print. Только потом идёшь к ИИ — и спрашиваешь «почему так», а не «напиши мне».</p>
+      </div>
+      <div class="rule">
+        <div class="n">ПРАВИЛО 03</div>
+        <h4>Объясни каждую строку</h4>
+        <p>Не можешь объяснить строку вслух своими словами — она не твоя. Удаляй и пиши заново, пока не сможешь. Это главный фильтр между «работает» и «понимаю».</p>
+      </div>
+      <div class="rule">
+        <div class="n">ПРАВИЛО 04</div>
+        <h4>Сначала на бумаге</h4>
+        <p>До кода — схема на листке: что на входе, что на выходе, какие шаги. Пять минут ручкой экономят час отладки и убивают привычку «попрошу, авось угадает».</p>
+      </div>
+      <div class="rule">
+        <div class="n">ПРАВИЛО 05</div>
+        <h4>Ломай специально</h4>
+        <p>Прошёл модуль — сломай свой код нарочно: убери строку, передай не тот тип, отключи интернет. Починил и понял ошибку — вот теперь модуль правда пройден.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <p>Темп важнее скорости: 40–60 минут в день лучше, чем восемь часов раз в неделю. Ставь галочку только когда «доказательство» реально запустилось у тебя на компьютере.</p>
+    <div class="sync" id="sync">Прогресс: <b>локально</b></div>
+  </footer>
+</div>
+
+<script>
+const STAGES = [
+  {
+    n:"00", name:"Фундамент Python", weeks:"3–4 недели",
+    goal:"Написать 120 строк с нуля, ни разу не открыв чат с нейронкой. Пока этого нет, всё остальное будет вайб-кодингом на другом языке.",
+    trap:"Смотреть уроки вместо того, чтобы печатать. Просмотренный ролик даёт 0 навыка — навык даёт только набранный и сломанный тобой код.",
+    links:[["docs.python.org/3/tutorial","https://docs.python.org/3/tutorial/"],["PEP 8 — стиль кода","https://peps.python.org/pep-0008/"]],
+    mods:[
+      {id:"00.1",t:"Рабочее место",d:"Python 3.12, VS Code, терминал, виртуальное окружение venv и pip. Запуск скрипта не кнопкой «Run», а командой из консоли.",p:"Создал venv, поставил в него pyTelegramBotAPI, выполнил <code>python -c \"import telebot; print(telebot.__version__)\"</code> и получил версию."},
+      {id:"00.2",t:"Переменные и типы",d:"str, int, float, bool, приведение типов, f-строки, input и print. Почему <code>\"5\" + 5</code> падает.",p:"Скрипт-калькулятор штрафа: спрашивает номер статьи и срок, печатает сумму f-строкой."},
+      {id:"00.3",t:"Ветвления и циклы",d:"if / elif / else, for, while, range, break и continue. Разница между «повторить 10 раз» и «повторять, пока».",p:"Меню в <code>while True</code> с выходом по «0» и игра «угадай число» за 7 попыток."},
+      {id:"00.4",t:"Списки, словари, кортежи",d:"Индексы, срезы, append/pop, вложенные структуры, перебор словаря через .items(). Ключевая структура всех твоих ботов.",p:"Словарь статей УК вида {номер: {название, срок, штраф}} и поиск по введённому номеру."},
+      {id:"00.5",t:"Функции",d:"def, аргументы, значения по умолчанию, return против print, локальные и глобальные переменные.",p:"Тот же калькулятор, но из четырёх функций и с <code>main()</code> внизу файла. Ни одной глобальной переменной."},
+      {id:"00.6",t:"Файлы и JSON",d:"open через with, чтение и запись, encoding='utf-8', json.dump и json.load. Почему кириллица превращается в \\u0410.",p:"История запросов пишется в requests_log.json и подхватывается при следующем запуске."},
+      {id:"00.7",t:"Ошибки и отладка",d:"Читать traceback снизу вверх, try/except с конкретным типом исключения, отладчик VS Code и точки останова вместо десяти print.",p:"Осознанно обработал три разных исключения: ValueError, KeyError, FileNotFoundError — каждое со своим сообщением пользователю."},
+      {id:"00.8",t:"Модули и структура проекта",d:"import своих файлов, <code>if __name__ == \"__main__\"</code>, requirements.txt, зачем проекту папка вместо кучи файлов на рабочем столе.",p:"Проект разбит на main.py, laws.py и storage.py; main.py короче 50 строк."}
+    ]
+  },
+  {
+    n:"01", name:"Telegram-боты всерьёз", weeks:"4–5 недель",
+    goal:"Бот, который переживает перезапуск, не падает от кривого ввода и не хранит токен прямо в коде. То есть настоящий, а не учебный.",
+    trap:"Держать состояния пользователей в словаре в памяти. Перезапустил бота — все, кто был в середине диалога, зависли навсегда. Именно так сейчас устроен твой wwrptechbot.",
+    links:[["Telegram Bot API","https://core.telegram.org/bots/api"],["pyTelegramBotAPI","https://pytba.readthedocs.io/"],["aiogram 3","https://docs.aiogram.dev/"]],
+    mods:[
+      {id:"01.1",t:"Как бот работает изнутри",d:"Bot API, апдейты, long polling против webhook. Что именно делает библиотека, когда ты вешаешь декоратор над функцией.",p:"Нарисовал от руки путь сообщения: пользователь → серверы Telegram → getUpdates → твоя функция → sendMessage. Объяснил вслух."},
+      {id:"01.2",t:"Разбор своего бота",d:"Пройти wwrptechbot построчно: что делает каждый декоратор, откуда берётся message, почему хендлеры срабатывают в порядке объявления.",p:"К каждому хендлеру дописан комментарий своими словами. Нашёл минимум три места, которые раньше не понимал."},
+      {id:"01.3",t:"Секреты и конфиг",d:".env, python-dotenv, .gitignore. Токен в коде — это слитый бот: любой, кто увидит файл, угонит его.",p:"API_TOKEN и ADMIN_ID вынесены в .env, старый токен отозван у @BotFather и выпущен новый. В git улетает только .env.example."},
+      {id:"01.4",t:"Клавиатуры и состояния",d:"ReplyKeyboard против Inline, callback_data, машина состояний руками. Что происходит, если посреди диалога прислать стикер.",p:"Диалог из трёх шагов, который нельзя сломать: любой неожиданный ввод получает понятный ответ, а не тишину."},
+      {id:"01.5",t:"Переход на aiogram 3",d:"async и await, роутеры, фильтры, встроенная FSM. Почему асинхронность нужна, когда у бота больше одного пользователя.",p:"Команда /start и одна ветка меню переписаны на aiogram 3 и работают параллельно старой версии."},
+      {id:"01.6",t:"База данных вместо памяти",d:"SQLite, таблицы, SELECT/INSERT/UPDATE, модуль sqlite3. Данные, которые не исчезают при Ctrl+C.",p:"Заявки на выплату лежат в базе, переживают перезапуск, а админ видит список необработанных заявок командой."},
+      {id:"01.7",t:"Деплой и жизнь без тебя",d:"VPS, systemd или Docker, модуль logging вместо print, автоперезапуск при падении.",p:"Бот отработал сутки при выключенном домашнем компьютере, и в логе видно, что он делал."}
+    ]
+  },
+  {
+    n:"02", name:"Discord-боты", weeks:"2–3 недели",
+    goal:"Второй мессенджер даётся вдвое быстрее первого — и это отличная проверка: понял ты идею ботов или заучил одну библиотеку.",
+    trap:"Писать вторую копию логики. Правильный ответ — общее ядро в отдельном модуле, а TG и DS остаются тонкими обёртками над ним.",
+    links:[["discord.py","https://discordpy.readthedocs.io/"],["Discord Developer Portal","https://discord.com/developers/docs/intro"]],
+    mods:[
+      {id:"02.1",t:"discord.py и слэш-команды",d:"Создание приложения, интенты, события on_ready и on_message, регистрация slash-команд, эмбеды.",p:"Команда /статья с номером отвечает красивым эмбедом с названием, сроком и штрафом."},
+      {id:"02.2",t:"Права, роли, кулдауны",d:"Проверки доступа, работа с ролями, ограничение частоты вызова, обработка ошибок команды.",p:"Команда, доступная только роли «Админ», с кулдауном 30 секунд и вежливым отказом остальным."},
+      {id:"02.3",t:"Одно ядро на двух ботов",d:"Выделение бизнес-логики в модуль без единого упоминания Telegram или Discord. Первый шаг к архитектуре.",p:"laws.py импортируется обоими ботами; правку статьи сделал один раз — обновилось в двух местах."}
+    ]
+  },
+  {
+    n:"03", name:"Мини-программы и инструменты", weeks:"3–4 недели",
+    goal:"Уметь делать программу, а не только бота: с окном, с аргументами, с тестами, с exe-шником, который можно скинуть другу.",
+    trap:"Класс ради класса. ООП нужно, когда у сущности есть и данные, и поведение — а не потому, что «так пишут взрослые».",
+    links:[["argparse","https://docs.python.org/3/library/argparse.html"],["requests","https://requests.readthedocs.io/"],["pytest","https://docs.pytest.org/"]],
+    mods:[
+      {id:"03.1",t:"Утилиты командной строки",d:"argparse, обязательные и необязательные аргументы, коды возврата, --help, который сам себя объясняет.",p:"<code>python fines.py --article 105 --json</code> печатает результат в двух форматах на выбор."},
+      {id:"03.2",t:"Работа с сетью",d:"requests, GET и POST, коды ответа, таймауты, разбор JSON, что делать, когда сервер молчит.",p:"Утилита дёргает публичное API (курс валют или погода) и не падает при обрыве связи."},
+      {id:"03.3",t:"ООП по делу",d:"Классы, атрибуты, методы, __init__, dataclass. Когда класс лучше словаря, а когда — хуже.",p:"Article и Application стали классами; в коде исчезли обращения вида data[3] и magic-строки."},
+      {id:"03.4",t:"Окно на экране",d:"tkinter: окна, кнопки, поля ввода, обработчики. Разница между кодом интерфейса и кодом логики.",p:"Настольный справочник по статьям: поле поиска, кнопка, результат в окне. Логика — импортом из laws.py."},
+      {id:"03.5",t:"Упаковка и раздача",d:"PyInstaller, сборка одного .exe, иконка, типовые проблемы с путями к файлам.",p:"Друг скачал твой exe, запустил у себя без Python и всё заработало."},
+      {id:"03.6",t:"Тесты",d:"pytest, assert, тестирование функций, идея «сломал код — покраснел тест».",p:"Пять тестов на laws.py; специально сломал функцию и увидел, какой именно тест упал."}
+    ]
+  },
+  {
+    n:"04", name:"Электроника и Arduino", weeks:"5–6 недель",
+    goal:"Перейти от кода, который двигает пиксели, к коду, который двигает вещи. Здесь ошибка стоит не исключения в консоли, а сгоревшего светодиода.",
+    trap:"<code>delay()</code> в каждой строке. Пока плата спит в delay, она не видит ни кнопок, ни датчиков. Настоящие прошивки живут на millis().",
+    links:[["Arduino Language Reference","https://docs.arduino.cc/language-reference/"],["Wokwi — симулятор без железа","https://wokwi.com/"],["pyserial","https://pyserial.readthedocs.io/"]],
+    mods:[
+      {id:"04.1",t:"Основы электричества",d:"Напряжение, ток, сопротивление, закон Ома, зачем светодиоду резистор, как читать макетную плату и пользоваться мультиметром.",p:"Посчитал резистор для светодиода на бумаге, собрал схему и проверил напряжение мультиметром — сошлось."},
+      {id:"04.2",t:"C++ для микроконтроллера",d:"setup и loop, типы данных, pinMode, digitalWrite, digitalRead. Чем компилируемый язык отличается от Python.",p:"Мигалка на двух светодиодах с разными периодами — без единого delay(), только на millis()."},
+      {id:"04.3",t:"Ввод и Serial",d:"Кнопки и дребезг контактов, подтяжка INPUT_PULLUP, потенциометр, analogRead, монитор порта как главный инструмент отладки.",p:"Значение с потенциометра выводится в Serial раз в 200 мс, кнопка считает нажатия без ложных срабатываний."},
+      {id:"04.4",t:"Датчики и библиотеки",d:"Подключение чужих библиотек, DHT (температура и влажность), HC-SR04 (расстояние), чтение datasheet вместо угадывания.",p:"Плата раз в две секунды сообщает температуру и расстояние до препятствия."},
+      {id:"04.5",t:"Движение",d:"ШИМ через analogWrite, сервоприводы, драйвер моторов L298N, почему моторы питают отдельно от платы.",p:"Шасси едет вперёд, назад и поворачивает по командам из монитора порта."},
+      {id:"04.6",t:"Робот целиком",d:"Сборка узлов в одну прошивку: датчик + логика + моторы, конечный автомат состояний робота.",p:"Робот сам объезжает препятствие. Прошивка написана тобой, без копипасты из чужого скетча."},
+      {id:"04.7",t:"Мост Python ↔ Arduino",d:"pyserial, собственный простой протокол обмена, разбор строк, обработка обрыва связи.",p:"Твой Telegram-бот по команде присылает актуальную температуру, снятую с реальной платы."}
+    ]
+  },
+  {
+    n:"05", name:"Промышленная автоматизация: CODESYS", weeks:"6–8 недель",
+    goal:"ПЛК — это не «большая Arduino». Другая модель исполнения, другие языки, другая цена ошибки. Зато это уже профессия, а не хобби.",
+    trap:"Писать в ПЛК бесконечный цикл. Контроллер сам циклически вызывает твою программу — свой while true внутри повесит задачу и уронит watchdog.",
+    links:[["CODESYS Online Help","https://help.codesys.com/"],["МЭК 61131-3 — обзор","https://en.wikipedia.org/wiki/IEC_61131-3"],["pymodbus","https://pymodbus.readthedocs.io/"]],
+    mods:[
+      {id:"05.1",t:"Что такое ПЛК",d:"Цикл сканирования: чтение входов → выполнение программы → запись выходов. Дискретные и аналоговые входы/выходы, время цикла, watchdog.",p:"Объяснил своими словами, почему в ПЛК нет места блокирующему коду, и чем он отличается от Arduino."},
+      {id:"05.2",t:"Среда CODESYS",d:"Установка, создание проекта, дерево устройств, компиляция и запуск в симуляторе — железо для старта не нужно.",p:"Проект запущен в режиме симуляции, значения переменных видно онлайн и их можно менять принудительно."},
+      {id:"05.3",t:"Языки МЭК 61131-3",d:"LD (релейная логика), FBD, ST. Почему электрики читают лестницу, а программисты пишут ST, и когда что уместно.",p:"Схема «пуск–стоп с самоподхватом» реализована дважды: на LD и на ST. Обе работают одинаково."},
+      {id:"05.4",t:"Structured Text всерьёз",d:"Типы данных МЭК, блоки VAR, IF и CASE, FUNCTION_BLOCK, таймеры TON и TOF, счётчики CTU.",p:"Светофор с тремя фазами на CASE и таймерах TON, с кнопкой пешеходного перехода."},
+      {id:"05.5",t:"Визуализация оператора",d:"Экран HMI, привязка элементов к переменным, кнопки, лампы, поля ввода уставок.",p:"Экран с кнопками «Пуск» и «Стоп», лампами состояния и полем задания времени выдержки."},
+      {id:"05.6",t:"Промышленная связь",d:"Modbus TCP и RTU, регистры и биты, обмен ПЛК с компьютером и SCADA.",p:"Python-скрипт через pymodbus читает регистр из ПЛК и пишет уставку обратно."},
+      {id:"05.7",t:"Безопасность и блокировки",d:"Аварийный стоп, взаимные блокировки, поведение при обрыве датчика, почему софтовый стоп не заменяет аппаратный.",p:"В проект добавлен аварийный стоп и блокировка одновременного включения двух противоположных выходов."}
+    ]
+  }
+];
+
+const ALL = STAGES.flatMap(s => s.mods.map(m => m.id));
+const KEY = "vibe2code.progress.v1";
+let done = {};
+let sel = 0;
+let dbRef = null;
+
+try { done = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { done = {}; }
+
+const $ = id => document.getElementById(id);
+const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const rich = s => esc(s).replace(/&lt;code&gt;/g,"<code>").replace(/&lt;\/code&gt;/g,"</code>");
+const nextId = () => ALL.find(id => !done[id]) || null;
+const stageDone = st => st.mods.filter(m => done[m.id]).length;
+
+function findMod(id){
+  for (const s of STAGES){ const m = s.mods.find(x => x.id === id); if (m) return {s,m}; }
+  return null;
+}
+
+function renderRail(){
+  const rail = $("rail");
+  rail.querySelectorAll(".stage-btn").forEach(n => n.remove());
+  STAGES.forEach((s, i) => {
+    const d = stageDone(s), total = s.mods.length;
+    const b = document.createElement("button");
+    b.className = "stage-btn" + (d === total ? " done" : "");
+    b.type = "button";
+    b.setAttribute("role","tab");
+    b.setAttribute("aria-selected", String(i === sel));
+    b.innerHTML = '<span class="num">' + s.n + ' · ' + d + '/' + total + '</span>' +
+                  '<span class="nm">' + esc(s.name) + '</span>' +
+                  '<span class="bar"><b style="width:' + Math.round(d/total*100) + '%"></b></span>';
+    b.addEventListener("click", () => { sel = i; renderRail(); renderStage(); });
+    rail.appendChild(b);
+  });
+}
+
+function renderStage(){
+  const s = STAGES[sel], cur = nextId();
+  const html = [];
+  html.push('<div class="stage-head"><span class="idx">ЭТАП ' + s.n + '</span><h2>' + esc(s.name) + '</h2><span class="weeks">' + s.weeks + '</span></div>');
+  html.push('<p class="goal"><strong>Цель этапа.</strong> ' + rich(s.goal) + '</p>');
+  html.push('<div class="trap"><span class="tag">Ловушка</span><span>' + rich(s.trap) + '</span></div>');
+  html.push('<div class="mods">');
+  s.mods.forEach(m => {
+    const isDone = !!done[m.id], isNow = m.id === cur;
+    html.push('<div class="mod' + (isDone ? ' is-done' : '') + (isNow ? ' is-now' : '') + '">' +
+      '<button class="tick" type="button" data-id="' + m.id + '" aria-pressed="' + isDone + '" aria-label="Модуль ' + m.id + ' пройден"></button>' +
+      '<div class="mod-body">' +
+        '<div class="mod-t"><span class="id">' + m.id + '</span><h3>' + esc(m.t) + '</h3></div>' +
+        '<p>' + rich(m.d) + '</p>' +
+        '<div class="proof"><b>Доказательство</b>' + rich(m.p) + '</div>' +
+      '</div></div>');
+  });
+  html.push('</div>');
+  html.push('<div class="links">' + s.links.map(l => '<a href="' + l[1] + '" target="_blank" rel="noopener">' + esc(l[0]) + ' ↗</a>').join('') + '</div>');
+  $("stage").innerHTML = html.join('');
+  $("stage").querySelectorAll(".tick").forEach(b => b.addEventListener("click", () => toggle(b.dataset.id)));
+}
+
+function renderGauge(){
+  const n = ALL.filter(id => done[id]).length, cur = nextId();
+  $("pctv").textContent = Math.round(n / ALL.length * 100) + "%";
+  $("cnt").textContent = n + " из " + ALL.length + " модулей";
+  const f = cur ? findMod(cur) : null;
+  $("now").innerHTML = f
+    ? '<em>' + f.m.id + '</em>' + esc(f.m.t) + ' — ' + esc(f.s.name)
+    : 'Маршрут пройден целиком. Теперь придумывай себе задачи сам.';
+  const sc = $("scale");
+  sc.innerHTML = "";
+  ALL.forEach(id => {
+    const i = document.createElement("i");
+    if (done[id]) i.className = "on"; else if (id === cur) i.className = "cur";
+    i.title = id;
+    sc.appendChild(i);
+  });
+}
+
+function render(){ renderRail(); renderStage(); renderGauge(); }
+
+function toggle(id){
+  if (done[id]) delete done[id]; else done[id] = true;
+  try { localStorage.setItem(KEY, JSON.stringify(done)); } catch (e) {}
+  save();
+  render();
+}
+
+function save(){
+  if (!dbRef) return;
+  dbRef.set({ done: done, updatedAt: new Date().toISOString() })
+       .catch(() => { $("sync").innerHTML = 'Прогресс: <b>локально</b>'; });
+}
+
+// Открываем этап, в котором находится текущий модуль.
+(function initSel(){
+  const cur = nextId();
+  if (!cur) return;
+  const i = STAGES.findIndex(s => s.mods.some(m => m.id === cur));
+  if (i >= 0) sel = i;
+})();
+
+render();
+
+(async () => {
+  try {
+    if (typeof claude === "undefined" || !claude.use) return;
+    const db = await claude.use("db");
+    if (!db) return;
+    dbRef = db.doc("progress/roadmap");
+    const snap = await dbRef.get();
+    if (snap.exists) {
+      const d = snap.data();
+      if (d && typeof d.done === "object" && d.done) {
+        done = Object.assign({}, d.done);
+        try { localStorage.setItem(KEY, JSON.stringify(done)); } catch (e) {}
+        render();
+      }
+    } else if (Object.keys(done).length) {
+      save();
+    }
+    $("sync").innerHTML = 'Прогресс: <b>синхронизирован</b>';
+    dbRef.onSnapshot(s2 => {
+      if (!s2.exists) return;
+      const d = s2.data();
+      if (!d || typeof d.done !== "object" || !d.done) return;
+      if (JSON.stringify(d.done) === JSON.stringify(done)) return;
+      done = Object.assign({}, d.done);
+      render();
+    }, () => { $("sync").innerHTML = 'Прогресс: <b>локально</b>'; });
+  } catch (e) {
+    $("sync").innerHTML = 'Прогресс: <b>локально</b>';
+  }
+})();
+</script>

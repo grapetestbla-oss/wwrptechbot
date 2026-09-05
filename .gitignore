@@ -1,0 +1,23 @@
+# Виртуальные окружения
+.venv/
+venv/
+env/
+
+# Секреты: токен бота и айди админа не должны попадать в git
+.env
+*.env
+!.env.example
+
+# Кэш Python
+__pycache__/
+*.py[cod]
+
+# Логи и локальные данные
+requests_log.json
+*.log
+
+# Служебное
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
