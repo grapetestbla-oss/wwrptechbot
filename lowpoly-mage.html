@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Low-Poly Mage — Three.js</title>
+<style>
+  :root {
+    --ink: #e9e4ff;
+    --dim: #9d92c9;
+    --cyan: #46f0e0;
+    --violet: #7b48d8;
+    --panel: rgba(20, 12, 40, 0.62);
+    --edge: rgba(123, 72, 216, 0.45);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: #0a0713;
+    color: var(--ink);
+    font: 14px/1.45 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  canvas { display: block; }
+
+  #hud {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    padding: 18px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #title { text-shadow: 0 2px 18px rgba(0,0,0,.8); }
+  #title h1 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--cyan);
+  }
+  #title p {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--dim);
+    letter-spacing: .04em;
+  }
+
+  #panel {
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+    padding: 12px;
+    min-width: 178px;
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 12px;
+    backdrop-filter: blur(9px);
+    -webkit-backdrop-filter: blur(9px);
+  }
+  button {
+    font: inherit;
+    font-size: 12px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--ink);
+    padding: 9px 12px;
+    cursor: pointer;
+    border-radius: 8px;
+    border: 1px solid var(--edge);
+    background: linear-gradient(180deg, rgba(123,72,216,.34), rgba(123,72,216,.12));
+    transition: transform .08s ease, border-color .18s ease, background .18s ease;
+  }
+  button:hover { border-color: var(--cyan); background: linear-gradient(180deg, rgba(70,240,224,.24), rgba(123,72,216,.16)); }
+  button:active { transform: translateY(1px); }
+  button[aria-pressed="true"] { border-color: var(--cyan); color: var(--cyan); }
+  .hint {
+    font-size: 11px;
+    color: var(--dim);
+    letter-spacing: .03em;
+    text-align: center;
+  }
+
+  #loader {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: #0a0713;
+    color: var(--dim);
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    font-size: 12px;
+    z-index: 20;
+    transition: opacity .6s ease;
+  }
+  #loader.gone { opacity: 0; pointer-events: none; }
+
+  @media (max-width: 560px) {
+    #hud { padding: 12px; flex-direction: column; }
+    #panel { min-width: 0; flex-direction: row; flex-wrap: wrap; }
+    .hint { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div id="title">
+    <h1>Arcanist</h1>
+    <p>low-poly mage &middot; procedural geometry</p>
+  </div>
+  <div id="panel">
+    <button id="castBtn" type="button">Cast Spell</button>
+    <button id="autoBtn" type="button" aria-pressed="true">Auto-cast: On</button>
+    <button id="spinBtn" type="button" aria-pressed="true">Orbit: On</button>
+    <div class="hint">drag to look &middot; scroll to zoom<br />space to cast</div>
+  </div>
+</div>
+
+<div id="loader">summoning&hellip;</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script>
+  // If the module below never runs, the CDN was unreachable — say so instead of
+  // leaving "summoning..." on screen forever.
+  window.__mageLoadCheck = setTimeout(function () {
+    var el = document.getElementById('loader');
+    if (el) el.innerHTML = 'could not load three.js &mdash; check your connection';
+  }, 8000);
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ------------------------------------------------------------------ *
+ * Palette
+ * ------------------------------------------------------------------ */
+const C = {
+  robeDeep:   0x2d1259,
+  robeMid:    0x4a1f8f,
+  robeLight:  0x6a32c9,
+  trim:       0x18e0d2,
+  skin:       0xf2d6c0,
+  beard:      0xdfe7f5,
+  wood:       0x5a4172,
+  glow:       0x5cffe8,
+  ground:     0x160e2b,
+  groundEdge: 0x241549,
+  rock:       0x2a1a4d,
+  crystal:    0x3ff2dd,
+};
+
+/* ------------------------------------------------------------------ *
+ * Renderer / scene / camera
+ * ------------------------------------------------------------------ */
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0713);
+scene.fog = new THREE.Fog(0x0a0713, 9, 24);
+
+const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(4.2, 3.1, 6.2);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.7, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 3.5;
+controls.maxDistance = 16;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.55;
+controls.update();
+
+/* ------------------------------------------------------------------ *
+ * Lighting
+ * ------------------------------------------------------------------ */
+scene.add(new THREE.HemisphereLight(0x9c7dff, 0x1b1030, 1.15));
+
+const keyLight = new THREE.DirectionalLight(0xffe9ff, 2.6);
+keyLight.position.set(4.5, 7.5, 4);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(2048, 2048);
+keyLight.shadow.camera.near = 1;
+keyLight.shadow.camera.far = 24;
+keyLight.shadow.camera.left = -9;
+keyLight.shadow.camera.right = 9;
+keyLight.shadow.camera.top = 9;
+keyLight.shadow.camera.bottom = -9;
+keyLight.shadow.bias = -0.0012;
+keyLight.shadow.normalBias = 0.02;
+scene.add(keyLight);
+
+// Cyan rim from behind-left, purple fill from the right.
+const rimLight = new THREE.DirectionalLight(C.glow, 0.8);
+rimLight.position.set(-5, 3.5, -5.5);
+scene.add(rimLight);
+
+const fillLight = new THREE.PointLight(0x8a5cff, 6, 18, 2);
+fillLight.position.set(-3.5, 2.2, 3);
+scene.add(fillLight);
+
+// Warm bounce aimed at the face, which sits in the hat brim's shadow.
+const faceLight = new THREE.PointLight(0xffd2b0, 7, 6, 2);
+faceLight.position.set(1.2, 2.5, 2.2);
+scene.add(faceLight);
+
+/* ------------------------------------------------------------------ *
+ * Helpers
+ * ------------------------------------------------------------------ */
+const mat = (color, opts = {}) => new THREE.MeshStandardMaterial({
+  color, flatShading: true, roughness: 0.82, metalness: 0.06, ...opts,
+});
+
+const glowMat = (color, intensity = 1.6) => new THREE.MeshStandardMaterial({
+  color, emissive: color, emissiveIntensity: intensity,
+  flatShading: true, roughness: 0.35, metalness: 0,
+});
+
+// Radial-gradient sprite texture, drawn once and shared by every glow.
+const glowTexture = (() => {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0.00, 'rgba(255,255,255,1)');
+  g.addColorStop(0.18, 'rgba(255,255,255,0.55)');
+  g.addColorStop(0.45, 'rgba(255,255,255,0.14)');
+  g.addColorStop(1.00, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+})();
+
+function makeGlow(color, scale, opacity) {
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTexture, color, transparent: true, opacity,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  }));
+  sprite.scale.setScalar(scale);
+  return sprite;
+}
+
+function mesh(geometry, material, { x = 0, y = 0, z = 0, shadow = true } = {}) {
+  const m = new THREE.Mesh(geometry, material);
+  m.position.set(x, y, z);
+  m.castShadow = shadow;
+  m.receiveShadow = shadow;
+  return m;
+}
+
+/* ------------------------------------------------------------------ *
+ * Ground
+ * ------------------------------------------------------------------ */
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(9, 12),
+  new THREE.MeshStandardMaterial({ color: C.ground, flatShading: true, roughness: 0.95, metalness: 0 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// A faceted stone plate the mage stands on: flat top, chamfered 11-sided rim.
+const plateau = new THREE.Mesh(
+  new THREE.CylinderGeometry(3.4, 3.62, 0.16, 11),
+  mat(C.groundEdge, { roughness: 0.92 })
+);
+plateau.position.y = 0.08;
+plateau.receiveShadow = true;
+plateau.castShadow = true;
+scene.add(plateau);
+
+// Rotating rune circles etched under the mage.
+const runeGroup = new THREE.Group();
+runeGroup.position.y = 0.17;
+scene.add(runeGroup);
+[[1.75, 6], [2.25, 12]].forEach(([radius, segments], i) => {
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(radius, radius + 0.045, segments),
+    new THREE.MeshBasicMaterial({
+      color: C.trim, transparent: true, opacity: 0.34,
+      side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
+    })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.userData.spin = i === 0 ? 0.16 : -0.1;
+  runeGroup.add(ring);
+});
+for (let i = 0; i < 8; i++) {
+  const a = (i / 8) * Math.PI * 2;
+  const glyph = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.16, 0.16),
+    new THREE.MeshBasicMaterial({
+      color: C.glow, transparent: true, opacity: 0.5,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    })
+  );
+  glyph.position.set(Math.cos(a) * 2.0, 0.001, Math.sin(a) * 2.0);
+  glyph.rotation.set(-Math.PI / 2, 0, a);
+  glyph.userData.spin = 0.16;
+  runeGroup.add(glyph);
+}
+
+// Scattered low-poly rocks and crystals for scene depth.
+const scatter = new THREE.Group();
+scene.add(scatter);
+for (let i = 0; i < 22; i++) {
+  const a = Math.random() * Math.PI * 2;
+  const r = 3.9 + Math.random() * 4.4;
+  const isCrystal = Math.random() > 0.62;
+  const m = isCrystal
+    ? mesh(new THREE.ConeGeometry(0.1 + Math.random() * 0.12, 0.5 + Math.random() * 0.9, 5), glowMat(C.crystal, 1.1))
+    : mesh(new THREE.DodecahedronGeometry(0.18 + Math.random() * 0.35, 0), mat(C.rock));
+  m.position.set(Math.cos(a) * r, isCrystal ? 0.2 : 0.02, Math.sin(a) * r);
+  m.rotation.set(Math.random() * 0.4 - 0.2, Math.random() * Math.PI, Math.random() * 0.4 - 0.2);
+  scatter.add(m);
+}
+
+/* ------------------------------------------------------------------ *
+ * The mage — assembled entirely from primitives
+ * ------------------------------------------------------------------ */
+const mage = new THREE.Group();
+scene.add(mage);
+
+const body = new THREE.Group();          // everything that breathes / bobs
+mage.position.y = 0.16;
+mage.add(body);
+
+// --- Robe: a flared cone, plus a lighter over-layer that sways.
+const robe = mesh(new THREE.CylinderGeometry(0.34, 0.78, 1.5, 8), mat(C.robeDeep), { y: 0.75 });
+body.add(robe);
+
+const robeOver = mesh(new THREE.CylinderGeometry(0.3, 0.71, 1.22, 8), mat(C.robeMid), { y: 0.62 });
+robeOver.rotation.y = Math.PI / 8;
+body.add(robeOver);
+
+const hem = mesh(new THREE.CylinderGeometry(0.79, 0.81, 0.1, 8), glowMat(C.trim, 0.75), { y: 0.06 });
+body.add(hem);
+
+// --- Torso and shoulders (this is the piece that breathes).
+const torso = new THREE.Group();
+torso.position.y = 1.52;
+body.add(torso);
+torso.add(mesh(new THREE.CylinderGeometry(0.32, 0.42, 0.52, 8), mat(C.robeLight)));
+torso.add(mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.16, 6), mat(C.skin, { roughness: 0.9 }), { y: 0.32 }));
+torso.add(mesh(new THREE.CylinderGeometry(0.28, 0.22, 0.09, 8), glowMat(C.trim, 0.55), { y: 0.28 }));
+
+// A cloak clasp: small glowing octahedron on the chest.
+torso.add(mesh(new THREE.OctahedronGeometry(0.075, 0), glowMat(C.glow, 2.4), { y: 0.2, z: 0.26 }));
+
+// --- Head.
+const head = new THREE.Group();
+head.position.y = 2.12;
+body.add(head);
+head.add(mesh(new THREE.SphereGeometry(0.3, 8, 6), mat(C.skin, { roughness: 0.9 })));
+
+// Eyes: glowing slits set into the shadow of the hat brim.
+[-0.1, 0.1].forEach((x) => {
+  head.add(mesh(new THREE.BoxGeometry(0.06, 0.032, 0.03), glowMat(C.glow, 1.5), { x: x * 1.05, y: 0.05, z: 0.275, shadow: false }));
+});
+
+// --- Beard: an inverted cone with a smaller moustache cone.
+const beard = new THREE.Group();
+beard.position.set(0, -0.13, 0.19);
+head.add(beard);
+beard.add(mesh(new THREE.SphereGeometry(0.16, 6, 4), mat(C.beard, { roughness: 0.95 }), { y: -0.03, z: -0.04 }));
+const beardCone = mesh(new THREE.ConeGeometry(0.15, 0.62, 6), mat(C.beard, { roughness: 0.95 }), { y: -0.29 });
+beardCone.rotation.x = Math.PI;   // point downward
+beard.add(beardCone);
+beard.add(mesh(new THREE.BoxGeometry(0.24, 0.06, 0.12), mat(C.beard, { roughness: 0.95 }), { y: 0.02, z: 0.07 }));
+
+// --- Hat: brim + tapered cone + bent tip + star.
+const hat = new THREE.Group();
+hat.position.y = 0.34;
+head.add(hat);
+hat.add(mesh(new THREE.CylinderGeometry(0.33, 0.58, 0.09, 8), mat(C.robeDeep), { y: 0.02 }));
+hat.add(mesh(new THREE.CylinderGeometry(0.325, 0.345, 0.1, 8), glowMat(C.trim, 0.85), { y: 0.1 }));
+hat.add(mesh(new THREE.ConeGeometry(0.33, 0.9, 8), mat(C.robeMid), { y: 0.58 }));
+
+const hatTip = new THREE.Group();     // bent, floppy point that trails the motion
+hatTip.position.y = 1.0;
+hatTip.rotation.z = -0.42;
+hat.add(hatTip);
+hatTip.add(mesh(new THREE.ConeGeometry(0.13, 0.62, 8), mat(C.robeLight), { y: 0.29 }));
+const hatStar = mesh(new THREE.OctahedronGeometry(0.11, 0), glowMat(C.glow, 1.6), { y: 0.66 });
+hatTip.add(hatStar);
+const starGlow = makeGlow(C.glow, 0.75, 0.45);
+starGlow.position.y = 0.66;
+hatTip.add(starGlow);
+
+/* --- Arms. Each pivots at the shoulder; geometry hangs below the pivot. --- */
+function makeArm(side) {
+  const pivot = new THREE.Group();
+  pivot.position.set(0.44 * side, 1.72, 0.03);
+
+  pivot.add(mesh(new THREE.SphereGeometry(0.16, 6, 4), mat(C.robeMid)));
+  const sleeve = mesh(new THREE.CylinderGeometry(0.15, 0.1, 0.6, 6), mat(C.robeDeep), { y: -0.32 });
+  pivot.add(sleeve);
+  pivot.add(mesh(new THREE.CylinderGeometry(0.105, 0.105, 0.07, 6), glowMat(C.trim, 0.7), { y: -0.6 }));
+
+  const hand = mesh(new THREE.IcosahedronGeometry(0.105, 0), mat(C.skin, { roughness: 0.9 }), { y: -0.66 });
+  pivot.add(hand);
+
+  body.add(pivot);
+  return { pivot, hand };
+}
+const armR = makeArm(1);
+const armL = makeArm(-1);
+
+/* --- Staff, parented to the right hand so it follows the arm. --- */
+const staff = new THREE.Group();
+staff.position.set(0, -0.66, 0.13);
+staff.rotation.z = -0.2;
+armR.pivot.add(staff);
+
+staff.add(mesh(new THREE.CylinderGeometry(0.036, 0.05, 2.5, 6), mat(C.wood, { roughness: 0.95 }), { y: 0.32 }));
+staff.add(mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.14, 6), glowMat(C.trim, 0.7), { y: 0.1 }));
+
+// Orb cradled in three claws at the top of the staff.
+const staffTop = new THREE.Group();
+staffTop.position.y = 1.6;
+staff.add(staffTop);
+for (let i = 0; i < 3; i++) {
+  const a = (i / 3) * Math.PI * 2;
+  const claw = mesh(new THREE.ConeGeometry(0.035, 0.3, 4), mat(C.wood), { x: Math.cos(a) * 0.11, y: -0.02, z: Math.sin(a) * 0.11 });
+  claw.rotation.set(Math.cos(a) * 0.42, 0, -Math.sin(a) * 0.42);
+  staffTop.add(claw);
+}
+const orb = mesh(new THREE.IcosahedronGeometry(0.17, 0), glowMat(C.glow, 1.4), { y: 0.14, shadow: false });
+staffTop.add(orb);
+
+const orbHalo = makeGlow(C.glow, 1.5, 0.55);
+orbHalo.position.y = 0.14;
+staffTop.add(orbHalo);
+
+const orbLight = new THREE.PointLight(C.glow, 3.2, 9, 2);
+orbLight.position.y = 0.14;
+staffTop.add(orbLight);
+
+/* ------------------------------------------------------------------ *
+ * Particle system — one pooled buffer drives motes, trail and burst
+ * ------------------------------------------------------------------ */
+const MAX_PARTICLES = 1400;
+const pPos = new Float32Array(MAX_PARTICLES * 3);
+const pCol = new Float32Array(MAX_PARTICLES * 3);
+const pSize = new Float32Array(MAX_PARTICLES);
+const pAlpha = new Float32Array(MAX_PARTICLES);
+const pVel = new Float32Array(MAX_PARTICLES * 3);
+const pLife = new Float32Array(MAX_PARTICLES);      // remaining seconds
+const pMaxLife = new Float32Array(MAX_PARTICLES);
+const pDrag = new Float32Array(MAX_PARTICLES);
+const pGravity = new Float32Array(MAX_PARTICLES);
+const pSwirl = new Float32Array(MAX_PARTICLES);
+const pBright = new Float32Array(MAX_PARTICLES);   // peak alpha, keeps additive blending from saturating
+let cursor = 0;
+
+const particleGeo = new THREE.BufferGeometry();
+particleGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+particleGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
+particleGeo.setAttribute('size', new THREE.BufferAttribute(pSize, 1));
+particleGeo.setAttribute('alpha', new THREE.BufferAttribute(pAlpha, 1));
+particleGeo.setDrawRange(0, MAX_PARTICLES);
+particleGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 2, 0), 40);
+
+const particleMat = new THREE.ShaderMaterial({
+  uniforms: { uScale: { value: window.innerHeight * 0.5 } },   // half-height in px: converts world size -> pixels
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+  vertexShader: /* glsl */`
+    uniform float uScale;
+    attribute float size;
+    attribute float alpha;
+    varying vec3 vColor;
+    varying float vAlpha;
+    void main() {
+      vColor = color;
+      vAlpha = alpha;
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      gl_PointSize = size * uScale / max(-mv.z, 0.001);
+      gl_Position = projectionMatrix * mv;
+    }
+  `,
+  fragmentShader: /* glsl */`
+    varying vec3 vColor;
+    varying float vAlpha;
+    void main() {
+      float d = length(gl_PointCoord - vec2(0.5));
+      if (d > 0.5) discard;
+      float falloff = smoothstep(0.5, 0.05, d);
+      gl_FragColor = vec4(vColor, vAlpha * falloff);
+    }
+  `,
+});
+particleMat.vertexColors = true;
+
+const particles = new THREE.Points(particleGeo, particleMat);
+particles.frustumCulled = false;
+scene.add(particles);
+
+const _color = new THREE.Color();
+function emit(pos, vel, colorHex, size, life, { drag = 1.1, gravity = 0, swirl = 0, bright = 0.55 } = {}) {
+  const i = cursor;
+  cursor = (cursor + 1) % MAX_PARTICLES;
+  const i3 = i * 3;
+
+  pPos[i3] = pos.x; pPos[i3 + 1] = pos.y; pPos[i3 + 2] = pos.z;
+  pVel[i3] = vel.x; pVel[i3 + 1] = vel.y; pVel[i3 + 2] = vel.z;
+
+  _color.setHex(colorHex);
+  pCol[i3] = _color.r; pCol[i3 + 1] = _color.g; pCol[i3 + 2] = _color.b;
+
+  pSize[i] = size;
+  pAlpha[i] = 0;
+  pBright[i] = bright;
+  pLife[i] = life;
+  pMaxLife[i] = life;
+  pDrag[i] = drag;
+  pGravity[i] = gravity;
+  pSwirl[i] = swirl;
+}
+
+function updateParticles(dt) {
+  for (let i = 0; i < MAX_PARTICLES; i++) {
+    if (pLife[i] <= 0) {
+      if (pAlpha[i] !== 0) pAlpha[i] = 0;
+      continue;
+    }
+    const i3 = i * 3;
+    pLife[i] -= dt;
+    if (pLife[i] <= 0) { pAlpha[i] = 0; continue; }
+
+    const damp = Math.exp(-pDrag[i] * dt);
+    pVel[i3] *= damp;
+    pVel[i3 + 1] = (pVel[i3 + 1] + pGravity[i] * dt) * damp;
+    pVel[i3 + 2] *= damp;
+
+    if (pSwirl[i] !== 0) {
+      // Rotate the horizontal velocity so the burst spirals upward.
+      const a = pSwirl[i] * dt;
+      const cs = Math.cos(a), sn = Math.sin(a);
+      const vx = pVel[i3], vz = pVel[i3 + 2];
+      pVel[i3] = vx * cs - vz * sn;
+      pVel[i3 + 2] = vx * sn + vz * cs;
+    }
+
+    pPos[i3] += pVel[i3] * dt;
+    pPos[i3 + 1] += pVel[i3 + 1] * dt;
+    pPos[i3 + 2] += pVel[i3 + 2] * dt;
+
+    const t = pLife[i] / pMaxLife[i];                      // 1 at birth -> 0 at death
+    const env = t < 0.3 ? t / 0.3 : Math.min(1, (1 - t) * 7);  // quick fade in, long fade out
+    pAlpha[i] = env * pBright[i];
+  }
+
+  particleGeo.attributes.position.needsUpdate = true;
+  particleGeo.attributes.color.needsUpdate = true;
+  particleGeo.attributes.size.needsUpdate = true;
+  particleGeo.attributes.alpha.needsUpdate = true;
+}
+
+/* --- A bright flash at the orb on release, decaying over ~0.4s. --- */
+const castFlash = makeGlow(0xffffff, 0.1, 0);
+scene.add(castFlash);
+let flashT = 1;
+
+/* --- Expanding shockwave rings released at the peak of a cast. --- */
+const shockwaves = [];
+for (let i = 0; i < 3; i++) {
+  const m = new THREE.Mesh(
+    new THREE.TorusGeometry(1, 0.05, 5, 22),
+    new THREE.MeshBasicMaterial({ color: C.glow, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  m.rotation.x = -Math.PI / 2;
+  m.visible = false;
+  scene.add(m);
+  shockwaves.push({ mesh: m, t: 1, delay: 0 });
+}
+function fireShockwaves(origin) {
+  shockwaves.forEach((s, i) => {
+    s.mesh.position.copy(origin);
+    s.t = 0;
+    s.delay = i * 0.12;
+    s.mesh.visible = true;
+  });
+}
+function updateShockwaves(dt) {
+  for (const s of shockwaves) {
+    if (s.t >= 1) continue;
+    if (s.delay > 0) { s.delay -= dt; continue; }
+    s.t = Math.min(1, s.t + dt * 0.9);
+    const scale = 0.3 + s.t * 4.2;
+    s.mesh.scale.setScalar(scale);
+    s.mesh.material.opacity = (1 - s.t) * 0.8;
+    if (s.t >= 1) s.mesh.visible = false;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Animation state
+ * ------------------------------------------------------------------ */
+const IDLE = {
+  armR: new THREE.Euler(0.06, 0, 0.26),    // +z swings the right arm outward
+  armL: new THREE.Euler(0.02, 0, -0.24),   // -z mirrors it on the left
+};
+
+let castT = -1;                 // -1 = idle, otherwise 0..1 through the cast
+const CAST_DURATION = 2.0;
+let burstFired = false;
+let autoCast = true;
+let autoTimer = 4.0;
+
+function startCast() {
+  if (castT >= 0) return;
+  castT = 0;
+  burstFired = false;
+  autoTimer = 5.5 + Math.random() * 2.5;
+}
+
+// Eased 0..1 -> 0..1..0 envelope for the staff raise.
+const easeInOut = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+const orbWorld = new THREE.Vector3();
+const _v = new THREE.Vector3();
+
+function releaseBurst() {
+  staffTop.getWorldPosition(orbWorld);
+  orbWorld.y += 0.14;
+
+  // Radial spiral burst.
+  for (let i = 0; i < 420; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const speed = 1.4 + Math.random() * 3.8;
+    _v.set(
+      Math.sin(phi) * Math.cos(theta),
+      Math.cos(phi) * 0.85 + 0.4,          // biased up, but some fall away
+      Math.sin(phi) * Math.sin(theta)
+    ).multiplyScalar(speed);
+    emit(
+      orbWorld,
+      _v,
+      Math.random() > 0.68 ? 0xb98cff : C.glow,
+      0.08 + Math.random() * 0.13,
+      1.0 + Math.random() * 1.2,
+      { drag: 1.35, gravity: -1.4, swirl: 2.6 * (Math.random() > 0.5 ? 1 : -1), bright: 0.75 + Math.random() * 0.25 }
+    );
+  }
+
+  // A vertical beam of sparks shooting straight up from the orb.
+  for (let i = 0; i < 70; i++) {
+    _v.set((Math.random() - 0.5) * 0.5, 4 + Math.random() * 5, (Math.random() - 0.5) * 0.5);
+    emit(orbWorld, _v, 0xd8fffa, 0.05 + Math.random() * 0.07, 0.7 + Math.random() * 0.6,
+      { drag: 1.9, gravity: -2.2, swirl: 1.2, bright: 0.9 });
+  }
+
+  castFlash.position.copy(orbWorld);
+  flashT = 0;
+
+  fireShockwaves(new THREE.Vector3(mage.position.x, 0.19, mage.position.z));
+}
+
+// Idle motes drifting up around the mage, plus a constant trickle off the orb.
+let moteAccum = 0;
+let trailAccum = 0;
+function ambientEmission(dt) {
+  moteAccum += dt;
+  const step = 1 / 11;
+  while (moteAccum > step) {
+    moteAccum -= step;
+    const a = Math.random() * Math.PI * 2;
+    const r = 0.8 + Math.random() * 1.9;
+    _v.set((Math.random() - 0.5) * 0.16, 0.22 + Math.random() * 0.42, (Math.random() - 0.5) * 0.16);
+    emit(
+      new THREE.Vector3(Math.cos(a) * r, 0.2 + Math.random() * 0.3, Math.sin(a) * r),
+      _v,
+      Math.random() > 0.5 ? C.glow : 0x9a5cff,
+      0.035 + Math.random() * 0.035,
+      2.4 + Math.random() * 1.8,
+      { drag: 0.12, gravity: 0.06, swirl: 0.55, bright: 0.25 + Math.random() * 0.2 }
+    );
+  }
+
+  // Trail rising off the orb — denser while casting.
+  staffTop.getWorldPosition(orbWorld);
+  orbWorld.y += 0.14;
+  trailAccum += dt * (castT >= 0 ? 55 : 14);
+  while (trailAccum >= 1) {
+    trailAccum -= 1;
+    _v.set((Math.random() - 0.5) * 0.5, 0.3 + Math.random() * 0.5, (Math.random() - 0.5) * 0.5);
+    emit(
+      _v.clone().multiplyScalar(0.08).add(orbWorld),
+      _v,
+      C.glow,
+      0.035 + Math.random() * 0.045,
+      0.6 + Math.random() * 0.7,
+      { drag: 0.9, gravity: 0.1, swirl: 1.4, bright: 0.4 }
+    );
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Main loop
+ * ------------------------------------------------------------------ */
+const clock = new THREE.Clock();
+
+function animate() {
+  const dt = Math.min(clock.getDelta(), 0.05);   // clamp so tab-switches don't explode the sim
+  const t = clock.elapsedTime;
+
+  /* --- Idle: breathing, bobbing, sway. --- */
+  const breath = Math.sin(t * 1.7);
+  const sway = Math.sin(t * 0.85);
+
+  body.position.y = breath * 0.035;
+  body.rotation.y = sway * 0.06;
+  body.rotation.z = Math.sin(t * 0.62) * 0.018;
+
+  torso.scale.set(1 + breath * 0.028, 1 + breath * 0.045, 1 + breath * 0.028);
+
+  head.position.y = 2.12 + breath * 0.018;
+  head.rotation.y = Math.sin(t * 0.47) * 0.22;
+  head.rotation.x = Math.sin(t * 0.71) * 0.05;
+
+  hat.rotation.z = Math.sin(t * 1.05) * 0.045;
+  hat.rotation.x = Math.cos(t * 0.82) * 0.035;
+  hatTip.rotation.z = -0.42 + Math.sin(t * 1.4 - 0.6) * 0.16;
+  hatTip.rotation.x = Math.cos(t * 1.15 - 0.6) * 0.13;
+  hatStar.rotation.y += dt * 1.4;
+  hatStar.rotation.x += dt * 0.8;
+
+  beard.rotation.x = Math.sin(t * 1.3) * 0.06;
+  beard.rotation.z = Math.sin(t * 0.9) * 0.04;
+
+  robeOver.rotation.y = Math.PI / 8 + Math.sin(t * 0.7) * 0.09;
+  robeOver.scale.x = 1 + Math.sin(t * 0.8) * 0.02;
+  robeOver.scale.z = 1 - Math.sin(t * 0.8) * 0.02;
+
+  armL.pivot.rotation.set(
+    IDLE.armL.x + Math.sin(t * 1.1) * 0.07,
+    0,
+    IDLE.armL.z + Math.sin(t * 0.9 + 1.2) * 0.05
+  );
+
+  // Idle staff arm: gentle drift, so the staff never sits perfectly still.
+  let armRx = IDLE.armR.x + Math.sin(t * 0.95) * 0.08;
+  let armRz = IDLE.armR.z + Math.sin(t * 0.68 + 0.5) * 0.06;
+  staff.rotation.x = 0;
+  staff.rotation.z = -0.2 + Math.sin(t * 0.95 + 0.4) * 0.035;
+
+  /* --- Cast: wind up, release, recover. --- */
+  let orbPulse = 1 + Math.sin(t * 3.1) * 0.12;
+
+  if (castT >= 0) {
+    castT += dt / CAST_DURATION;
+
+    // Envelope: 0 -> 1 by 35% (raise), hold, then back down by 100%.
+    const raise = castT < 0.35
+      ? easeInOut(castT / 0.35)
+      : castT < 0.55 ? 1 : 1 - easeInOut(Math.min(1, (castT - 0.55) / 0.45));
+
+    armRx += -0.38 * raise;
+    armRz += 2.05 * raise;                 // arm sweeps out and overhead
+    staff.rotation.z -= 1.95 * raise;      // counter-rotate: staff stays upright
+    staff.rotation.x = 0.12 * raise;
+    armL.pivot.rotation.x -= 0.55 * raise;  // free hand lifts in support
+    armL.pivot.rotation.z -= 0.3 * raise;
+    body.rotation.x = -0.07 * raise;
+    head.rotation.x += -0.16 * raise;
+
+    // Charge glow ramps to the release, then decays.
+    orbPulse += castT < 0.42 ? Math.pow(castT / 0.42, 2) * 4.5 : Math.max(0, 4.5 * (1 - (castT - 0.42) / 0.5));
+
+    if (!burstFired && castT >= 0.42) {
+      burstFired = true;
+      releaseBurst();
+    }
+    if (castT >= 1) {
+      castT = -1;
+      body.rotation.x = 0;
+    }
+  } else {
+    body.rotation.x = 0;
+    if (autoCast) {
+      autoTimer -= dt;
+      if (autoTimer <= 0) startCast();
+    }
+  }
+
+  armR.pivot.rotation.set(armRx, 0, armRz);
+
+  orb.rotation.y += dt * 0.9;
+  orb.rotation.x += dt * 0.5;
+  orb.scale.setScalar(0.9 + orbPulse * 0.16);
+  orbHalo.scale.setScalar(1.15 + orbPulse * 0.42);
+  orbHalo.material.opacity = 0.34 + orbPulse * 0.12;
+  orb.material.emissiveIntensity = 0.9 + orbPulse * 0.55;
+  orbLight.intensity = 2.2 + orbPulse * 2.6;
+
+  // Rune circles react to the cast as well.
+  runeGroup.children.forEach((c) => { c.rotation.z += (c.userData.spin || 0) * dt; });
+  const runeGlow = castT >= 0 ? 0.34 + orbPulse * 0.1 : 0.3;
+  runeGroup.children.forEach((c) => { c.material.opacity = runeGlow; });
+
+  if (flashT < 1) {
+    flashT = Math.min(1, flashT + dt * 2.6);
+    const f = 1 - flashT;
+    castFlash.scale.setScalar(1.2 + flashT * 5.5);
+    castFlash.material.opacity = f * f * 0.95;
+  } else if (castFlash.material.opacity !== 0) {
+    castFlash.material.opacity = 0;
+  }
+
+  ambientEmission(dt);
+  updateParticles(dt);
+  updateShockwaves(dt);
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+renderer.setAnimationLoop(animate);
+
+/* ------------------------------------------------------------------ *
+ * Responsive resize
+ * ------------------------------------------------------------------ */
+function onResize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w / h;
+  // Widen the field of view on tall/narrow viewports so the mage stays framed.
+  camera.fov = THREE.MathUtils.clamp(42 / Math.min(1, camera.aspect), 42, 68);
+  camera.updateProjectionMatrix();
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(w, h);
+  particleMat.uniforms.uScale.value = h * 0.5;   // keep point sizes constant in screen space
+}
+window.addEventListener('resize', onResize);
+window.addEventListener('orientationchange', onResize);
+onResize();
+
+/* ------------------------------------------------------------------ *
+ * UI
+ * ------------------------------------------------------------------ */
+const castBtn = document.getElementById('castBtn');
+const autoBtn = document.getElementById('autoBtn');
+const spinBtn = document.getElementById('spinBtn');
+
+castBtn.addEventListener('click', startCast);
+
+autoBtn.addEventListener('click', () => {
+  autoCast = !autoCast;
+  autoTimer = 2.5;
+  autoBtn.setAttribute('aria-pressed', String(autoCast));
+  autoBtn.textContent = 'Auto-cast: ' + (autoCast ? 'On' : 'Off');
+});
+
+spinBtn.addEventListener('click', () => {
+  controls.autoRotate = !controls.autoRotate;
+  spinBtn.setAttribute('aria-pressed', String(controls.autoRotate));
+  spinBtn.textContent = 'Orbit: ' + (controls.autoRotate ? 'On' : 'Off');
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); startCast(); }
+});
+
+window.mageDemo = { scene, camera, renderer, controls, mage, cast: startCast };
+
+clearTimeout(window.__mageLoadCheck);
+
+const loader = document.getElementById('loader');
+loader.classList.add('gone');
+setTimeout(() => loader.remove(), 700);
+</script>
+</body>
+</html>
