@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Low-Poly Dino Runner</title>
+<style>
+  :root {
+    --sky-top: #6ec6ff;
+    --sky-mid: #b6e3ff;
+    --sky-low: #ffd9a0;
+    --sky-horizon: #ffb98a;
+    --ink: #2b2140;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: var(--sky-horizon);
+    font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+  #sky {
+    position: fixed; inset: 0; z-index: 0;
+    background:
+      radial-gradient(120% 80% at 50% 105%, var(--sky-horizon) 0%, rgba(255,185,138,0) 55%),
+      linear-gradient(to bottom, var(--sky-top) 0%, var(--sky-mid) 42%, var(--sky-low) 78%, var(--sky-horizon) 100%);
+  }
+  canvas { position: fixed; inset: 0; z-index: 1; display: block; }
+  #vignette {
+    position: fixed; inset: 0; z-index: 2; pointer-events: none;
+    background: radial-gradient(120% 100% at 50% 45%, rgba(0,0,0,0) 55%, rgba(60,30,70,0.22) 100%);
+  }
+
+  .ui { position: fixed; z-index: 3; pointer-events: none; user-select: none; }
+
+  #hud {
+    top: 18px; right: 22px; text-align: right; z-index: 5;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 2px 0 rgba(255,255,255,0.55);
+  }
+  #hud .score {
+    font-size: clamp(28px, 5.4vw, 46px);
+    font-weight: 800; letter-spacing: 2px; line-height: 1;
+    color: #3a2b55;
+  }
+  #hud .hi {
+    margin-top: 6px; font-size: clamp(11px, 2.1vw, 15px);
+    font-weight: 700; letter-spacing: 3px; color: #7a5c86; opacity: .9;
+  }
+  #hud .score.flash { animation: pop .45s ease-out; }
+  @keyframes pop {
+    0%   { transform: scale(1);    color: #3a2b55; }
+    35%  { transform: scale(1.22); color: #ff7043; }
+    100% { transform: scale(1);    color: #3a2b55; }
+  }
+
+  #speedwrap {
+    top: 20px; left: 22px; z-index: 5; width: clamp(90px, 18vw, 150px);
+  }
+  #speedwrap .label {
+    font-size: 11px; font-weight: 800; letter-spacing: 3px;
+    color: #7a5c86; margin-bottom: 6px; text-shadow: 0 1px 0 rgba(255,255,255,.5);
+  }
+  #speedbar {
+    height: 8px; border-radius: 99px; overflow: hidden;
+    background: rgba(58,43,85,0.16); box-shadow: inset 0 1px 2px rgba(0,0,0,.12);
+  }
+  #speedfill {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #4ecb71, #ffd166 55%, #ff6b6b);
+    transition: width .18s linear;
+  }
+
+  #overlay {
+    inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center;
+    background: rgba(255, 244, 232, 0.34);
+    backdrop-filter: blur(2px);
+    transition: opacity .28s ease;
+  }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+  .card {
+    text-align: center; padding: 30px 40px;
+    border-radius: 22px;
+    background: rgba(255,255,255,0.78);
+    box-shadow: 0 18px 50px rgba(80, 45, 90, 0.22), 0 2px 0 rgba(255,255,255,.9) inset;
+    max-width: min(90vw, 460px);
+  }
+  .card h1 {
+    margin: 0 0 6px; font-size: clamp(26px, 6vw, 42px); letter-spacing: 1px;
+    color: #33254d;
+  }
+  .card h1 span { color: #2fa36b; }
+  .card p { margin: 10px 0 0; font-size: clamp(13px, 2.6vw, 16px); color: #5d4a72; line-height: 1.5; }
+  .card .final { font-size: clamp(20px, 4.6vw, 30px); font-weight: 800; color: #ff6b3d; margin-top: 12px; }
+  kbd {
+    display: inline-block; padding: 3px 9px; border-radius: 7px;
+    background: #33254d; color: #fff; font-family: inherit; font-weight: 700;
+    font-size: .92em; box-shadow: 0 2px 0 #1c1330;
+  }
+  .hint { margin-top: 16px; font-size: 12px; letter-spacing: 2px; color: #8a76a0; text-transform: uppercase; }
+</style>
+</head>
+<body>
+<div id="sky"></div>
+<div id="vignette"></div>
+
+<div class="ui" id="speedwrap">
+  <div class="label">SPEED</div>
+  <div id="speedbar"><div id="speedfill"></div></div>
+</div>
+
+<div class="ui" id="hud">
+  <div class="score" id="score">0</div>
+  <div class="hi" id="hi">HI 0</div>
+</div>
+
+<div class="ui" id="overlay">
+  <div class="card" id="card">
+    <h1>LOW&#8209;POLY <span>DINO</span> RUN</h1>
+    <p>Your T&#8209;Rex runs on its own. Hop the cacti, boulders and bones.</p>
+    <p><kbd>SPACE</kbd> / <kbd>&uarr;</kbd> / tap to jump &nbsp;&middot;&nbsp; <kbd>&darr;</kbd> to drop fast</p>
+    <div class="hint">Press space to start</div>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ------------------------------------------------------------------ *
+ * Palette
+ * ------------------------------------------------------------------ */
+const C = {
+  fog:        0xffc39a,
+  sand:       0xf6cf94,
+  sandDeep:   0xe7ab6d,
+  path:       0xe8b678,
+  dunes:      [0xf3c489, 0xeeb475, 0xf7d6a4],
+  mountain:   [0xa08ae0, 0x8f7fd6, 0xb79ae8],
+  cactus:     0x2fa36b,
+  cactusDark: 0x24855a,
+  rock:       [0xb08b74, 0x9c7f6d, 0xc39a7e],
+  bone:       0xf3ece2,
+  dino:       0x4ecb71,
+  dinoDark:   0x35a95a,
+  dinoBelly:  0xc7f0b8,
+  dinoSpike:  0xffb03a,
+  eye:        0xfdfdfd,
+  pupil:      0x231a33,
+  fern:       [0x37b57d, 0x2e9d6c, 0x51c98d],
+  trunk:      0x8a5a3b,
+  cloud:      0xffffff,
+  dust:       0xf7dcb4,
+};
+
+/* ------------------------------------------------------------------ *
+ * Tunables
+ * ------------------------------------------------------------------ */
+const CFG = {
+  startSpeed: 17,
+  maxSpeed:   46,
+  accel:      0.52,          // units/s added per second
+  gravity:    56,
+  jumpForce:  17.2,
+  fastFall:   62,            // extra downward accel while holding down
+  spawnZ:     -124,
+  despawnZ:   16,
+  laneHalf:   1.5,
+  scoreRate:  1.15,
+};
+
+/* ------------------------------------------------------------------ *
+ * Small helpers
+ * ------------------------------------------------------------------ */
+const rand  = (a, b) => a + Math.random() * (b - a);
+const randI = (a, b) => Math.floor(rand(a, b + 1));
+const pick  = arr => arr[Math.floor(Math.random() * arr.length)];
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+const matCache = new Map();
+function mat(color, opts = {}) {
+  const key = color + '|' + JSON.stringify(opts);
+  if (!matCache.has(key)) {
+    matCache.set(key, new THREE.MeshStandardMaterial({
+      color, flatShading: true, roughness: opts.roughness ?? 0.92, metalness: 0,
+      ...(opts.extra || {}),
+    }));
+  }
+  return matCache.get(key);
+}
+function box(w, h, d, color, x = 0, y = 0, z = 0) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color));
+  m.position.set(x, y, z);
+  m.castShadow = true;
+  return m;
+}
+
+/* ------------------------------------------------------------------ *
+ * Renderer / scene / camera
+ * ------------------------------------------------------------------ */
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+} catch (err) {
+  document.getElementById('card').innerHTML =
+    '<h1>NO WEBGL</h1><p>This browser could not start WebGL, so the desert stays empty. ' +
+    'Try a recent Chrome, Firefox, Safari or Edge with hardware acceleration enabled.</p>';
+  throw err;
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(C.fog, 60, 235);
+
+const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 400);
+const camBase = new THREE.Vector3(3.4, 3.5, 9.2);
+const camLook = new THREE.Vector3(0, 1.6, -9);
+camera.position.copy(camBase);
+camera.lookAt(camLook);
+
+/* ------------------------------------------------------------------ *
+ * Soft lighting
+ * ------------------------------------------------------------------ */
+scene.add(new THREE.HemisphereLight(0xcfeaff, 0xffc98d, 1.15));
+
+const sun = new THREE.DirectionalLight(0xfff2d8, 2.0);
+sun.position.set(-14, 22, 12);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 80;
+sun.shadow.camera.left = -26;
+sun.shadow.camera.right = 26;
+sun.shadow.camera.top = 26;
+sun.shadow.camera.bottom = -26;
+sun.shadow.bias = -0.0012;
+sun.shadow.normalBias = 0.03;
+sun.target.position.set(0, 0, -10);
+scene.add(sun, sun.target);
+
+scene.add(new THREE.DirectionalLight(0xffd0e8, 0.35).translateOnAxis(new THREE.Vector3(1, 0.5, -1).normalize(), 10));
+
+/* ------------------------------------------------------------------ *
+ * Ground: flat running corridor, dunes rising to the sides
+ * ------------------------------------------------------------------ */
+function buildGround() {
+  const g = new THREE.PlaneGeometry(420, 460, 56, 60);
+  const pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i);
+    const edge = clamp((Math.abs(x) - 5) / 22, 0, 1);   // keep the lane perfectly flat
+    const amp  = edge * edge * 5.5;
+    const h = Math.sin(x * 0.17) * Math.cos(y * 0.13) * 0.6
+            + Math.sin(x * 0.06 + y * 0.09) * 0.9
+            + (Math.random() - 0.5) * 0.55;
+    pos.setZ(i, h * amp);
+  }
+  g.computeVertexNormals();
+  const mesh = new THREE.Mesh(g, mat(C.sand, { roughness: 1 }));
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.z = -140;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+scene.add(buildGround());
+
+// Subtle worn path so the lane reads clearly.
+const path = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 460), mat(C.path, { roughness: 1 }));
+path.rotation.x = -Math.PI / 2;
+path.position.set(0, 0.012, -140);
+path.receiveShadow = true;
+scene.add(path);
+
+/* ------------------------------------------------------------------ *
+ * Distant mountains + clouds (parallax layers)
+ * ------------------------------------------------------------------ */
+const parallax = [];
+function buildMountains() {
+  const grp = new THREE.Group();
+  for (let i = 0; i < 26; i++) {
+    const h = rand(12, 30);
+    const m = new THREE.Mesh(new THREE.ConeGeometry(rand(9, 20), h, randI(4, 6), 1), mat(pick(C.mountain), { roughness: 1 }));
+    m.position.set(rand(-150, 150), h / 2 - 2, rand(-330, -150));
+    m.rotation.y = rand(0, Math.PI);
+    grp.add(m);
+  }
+  return grp;
+}
+scene.add(buildMountains());
+
+function buildCloud() {
+  const g = new THREE.Group();
+  const n = randI(3, 5);
+  for (let i = 0; i < n; i++) {
+    const r = rand(1.6, 3.4);
+    const p = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), mat(C.cloud, {
+      roughness: 1, extra: { emissive: 0xffe9d6, emissiveIntensity: 0.45, fog: true },
+    }));
+    p.position.set(rand(-4, 4), rand(-0.6, 0.9), rand(-2, 2));
+    p.scale.y = rand(0.5, 0.75);
+    g.add(p);
+  }
+  return g;
+}
+for (let i = 0; i < 12; i++) {
+  const c = buildCloud();
+  c.position.set(rand(-90, 90), rand(20, 38), rand(-300, 10));
+  c.userData.factor = rand(0.05, 0.14);
+  scene.add(c);
+  parallax.push(c);
+}
+
+/* ------------------------------------------------------------------ *
+ * The T-Rex — boxes only, hand-assembled
+ * ------------------------------------------------------------------ */
+function buildDino() {
+  const root = new THREE.Group();
+  const rig  = new THREE.Group();          // squash/stretch + bob live here
+  root.add(rig);
+
+  const body = box(0.95, 1.05, 1.75, C.dino, 0, 1.5, 0.1);
+  rig.add(body);
+  rig.add(box(0.8, 0.42, 1.35, C.dinoBelly, 0, 1.12, 0.05));
+  rig.add(box(0.78, 0.72, 0.55, C.dino, 0, 1.95, -0.75));           // neck
+
+  // head
+  const head = new THREE.Group();
+  head.position.set(0, 2.22, -1.12);
+  head.add(box(0.72, 0.66, 0.86, C.dino, 0, 0, 0));
+  head.add(box(0.62, 0.36, 0.5, C.dino, 0, -0.13, -0.63));          // snout
+  head.add(box(0.5, 0.12, 0.42, C.dinoBelly, 0, -0.29, -0.62));     // jaw
+  for (const s of [-1, 1]) {
+    head.add(box(0.06, 0.2, 0.2, C.eye, s * 0.37, 0.12, -0.2));
+    head.add(box(0.045, 0.1, 0.1, C.pupil, s * 0.4, 0.12, -0.26));
+    head.add(box(0.07, 0.16, 0.16, C.dinoDark, s * 0.3, 0.35, 0.05)); // brow ridge
+  }
+  rig.add(head);
+
+  // back spikes
+  for (let i = 0; i < 5; i++) {
+    const sp = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.3, 4), mat(C.dinoSpike));
+    sp.castShadow = true;
+    sp.position.set(0, 2.06 - i * 0.02, -0.42 + i * 0.42);
+    sp.rotation.x = -0.35;
+    rig.add(sp);
+  }
+
+  // tail (three tapering segments, gently lifted)
+  const tail = new THREE.Group();
+  tail.position.set(0, 1.62, 0.95);
+  const t1 = box(0.68, 0.66, 0.8, C.dino, 0, 0.04, 0.34);
+  const t2 = box(0.5, 0.48, 0.72, C.dinoDark, 0, 0.24, 1.0);
+  const t3 = box(0.3, 0.3, 0.62, C.dinoDark, 0, 0.5, 1.55);
+  tail.add(t1, t2, t3);
+  tail.rotation.x = -0.2;
+  rig.add(tail);
+
+  // tiny arms
+  const arms = [];
+  for (const s of [-1, 1]) {
+    const a = new THREE.Group();
+    a.position.set(s * 0.5, 1.62, -0.5);
+    a.add(box(0.16, 0.42, 0.18, C.dinoDark, 0, -0.2, 0));
+    rig.add(a); arms.push(a);
+  }
+
+  // legs on hip pivots
+  const legs = [];
+  for (const s of [-1, 1]) {
+    const hip = new THREE.Group();
+    hip.position.set(s * 0.34, 1.12, 0.18);
+    const thigh = box(0.36, 0.62, 0.46, C.dinoDark, 0, -0.3, 0);
+    const shin  = box(0.26, 0.5, 0.3, C.dino, 0, -0.82, -0.03);
+    const foot  = box(0.32, 0.16, 0.62, C.dinoDark, 0, -1.05, -0.16);
+    hip.add(thigh, shin, foot);
+    rig.add(hip); legs.push(hip);
+  }
+
+  root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
+  return { root, rig, head, tail, legs, arms };
+}
+
+const dino = buildDino();
+scene.add(dino.root);
+
+// contact shadow blob (keeps the character grounded even in soft light)
+const blob = new THREE.Mesh(
+  new THREE.CircleGeometry(0.85, 16),
+  new THREE.MeshBasicMaterial({ color: 0x8a5a3f, transparent: true, opacity: 0.3, depthWrite: false })
+);
+blob.rotation.x = -Math.PI / 2;
+blob.position.y = 0.02;
+scene.add(blob);
+
+/* ------------------------------------------------------------------ *
+ * Obstacles
+ * ------------------------------------------------------------------ */
+function buildCactus() {
+  const g = new THREE.Group();
+  const h = rand(1.15, 1.62);
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.3, h, 7, 1), mat(C.cactus));
+  trunk.position.y = h / 2;
+  g.add(trunk);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.24, 7, 5), mat(C.cactus));
+  cap.position.y = h; g.add(cap);
+  for (const s of [-1, 1]) {
+    if (Math.random() < 0.62) {
+      const ah = rand(0.4, 0.66), ay = rand(h * 0.42, h * 0.68);
+      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.15, ah, 6, 1), mat(C.cactusDark));
+      arm.position.set(s * 0.32, ay + ah / 2, 0);
+      g.add(arm);
+      const link = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.2, 0.2), mat(C.cactusDark));
+      link.position.set(s * 0.2, ay, 0);
+      g.add(link);
+    }
+  }
+  return { obj: g, hw: 0.5, hd: 0.34, h };
+}
+
+function buildRock() {
+  const g = new THREE.Group();
+  const s = rand(0.55, 0.95);
+  const r = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 0), mat(pick(C.rock)));
+  r.position.y = s * 0.72;
+  r.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
+  r.scale.set(1, rand(0.75, 1.05), rand(0.85, 1.15));
+  g.add(r);
+  if (Math.random() < 0.5) {
+    const r2 = new THREE.Mesh(new THREE.IcosahedronGeometry(s * 0.5, 0), mat(pick(C.rock)));
+    r2.position.set(rand(-0.6, 0.6), s * 0.3, rand(-0.3, 0.3));
+    r2.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
+    g.add(r2);
+  }
+  return { obj: g, hw: s * 0.95, hd: s * 0.8, h: s * 1.45 };
+}
+
+function buildBones() {
+  const g = new THREE.Group();
+  const skull = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 0), mat(C.bone));
+  skull.position.set(0, 0.4, 0); skull.scale.set(1, 0.85, 1.35);
+  skull.rotation.y = rand(0, 3);
+  g.add(skull);
+  for (let i = 0; i < 4; i++) {
+    const rib = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.06, 4, 8, Math.PI), mat(C.bone));
+    rib.position.set(rand(-0.15, 0.15), 0.18, 0.7 + i * 0.32);
+    rib.rotation.set(0, 0, rand(-0.2, 0.2));
+    g.add(rib);
+  }
+  return { obj: g, hw: 0.55, hd: 0.9, h: 0.85 };
+}
+
+const OB_BUILDERS = [buildCactus, buildCactus, buildCactus, buildRock, buildRock, buildBones];
+const obstacles = [];
+
+function spawnObstacle(z) {
+  const cluster = Math.random() < 0.26 ? randI(2, 3) : 1;
+  let offset = 0;
+  for (let i = 0; i < cluster; i++) {
+    const built = pick(OB_BUILDERS)();
+    built.obj.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    built.obj.position.set(clamp(rand(-0.5, 0.5) + offset, -CFG.laneHalf, CFG.laneHalf), 0, z);
+    built.obj.rotation.y = rand(0, Math.PI * 2);
+    scene.add(built.obj);
+    obstacles.push(built);
+    offset += rand(0.55, 0.9) * (Math.random() < 0.5 ? -1 : 1);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Scenery (recycled decor pool)
+ * ------------------------------------------------------------------ */
+const scenery = [];
+const SCENE_LEN = 340;
+
+function buildDune() {
+  const m = new THREE.Mesh(new THREE.ConeGeometry(rand(4, 11), rand(1.6, 4.6), randI(5, 7), 1), mat(pick(C.dunes), { roughness: 1 }));
+  m.rotation.y = rand(0, Math.PI);
+  m.receiveShadow = true;
+  m.userData.minX = 9;
+  return m;
+}
+function buildFern() {
+  const g = new THREE.Group();
+  const th = rand(1.2, 2.6);
+  const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.18, th, 5), mat(C.trunk));
+  tr.position.y = th / 2; g.add(tr);
+  const n = randI(4, 6);
+  for (let i = 0; i < n; i++) {
+    const leaf = new THREE.Mesh(new THREE.ConeGeometry(rand(0.4, 0.75), rand(1.1, 2.0), 4), mat(pick(C.fern)));
+    const a = (i / n) * Math.PI * 2 + rand(-0.3, 0.3);
+    leaf.position.set(Math.cos(a) * 0.55, th + 0.3, Math.sin(a) * 0.55);
+    leaf.rotation.set(Math.cos(a) * 0.75, 0, -Math.sin(a) * 0.75);
+    g.add(leaf);
+  }
+  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  g.userData.minX = 4.4;
+  return g;
+}
+function buildPebble() {
+  const s = rand(0.16, 0.45);
+  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 0), mat(pick(C.rock)));
+  m.position.y = s * 0.5;
+  m.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
+  m.castShadow = true;
+  m.userData.minX = 3.6;
+  return m;
+}
+function buildBigRock() {
+  const g = new THREE.Group();
+  for (let i = 0; i < randI(2, 4); i++) {
+    const s = rand(0.9, 2.6);
+    const r = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 0), mat(pick(C.rock)));
+    r.position.set(rand(-1.6, 1.6), s * 0.6, rand(-1.6, 1.6));
+    r.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
+    r.castShadow = true;
+    g.add(r);
+  }
+  g.userData.minX = 11;
+  return g;
+}
+
+function placeScenery(obj, z) {
+  const min = obj.userData.minX || 4.4;
+  const side = Math.random() < 0.5 ? -1 : 1;
+  const far = Math.random() < 0.45 ? rand(min, min + 8) : rand(min, 62);
+  obj.position.set(side * far, obj.position.y, z);
+  obj.rotation.y = rand(0, Math.PI * 2);
+}
+function seedScenery() {
+  const makers = [buildDune, buildDune, buildFern, buildFern, buildBigRock, buildPebble, buildPebble];
+  for (let i = 0; i < 160; i++) {
+    const o = pick(makers)();
+    placeScenery(o, rand(-SCENE_LEN, CFG.despawnZ));
+    scene.add(o);
+    scenery.push(o);
+  }
+}
+seedScenery();
+
+/* ------------------------------------------------------------------ *
+ * Dust particles
+ * ------------------------------------------------------------------ */
+const dust = [];
+for (let i = 0; i < 34; i++) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), mat(C.dust, { roughness: 1 }));
+  m.visible = false;
+  scene.add(m);
+  dust.push({ mesh: m, life: 0, vel: new THREE.Vector3() });
+}
+let dustCursor = 0;
+function puff(count, x, y, z, power = 1) {
+  for (let i = 0; i < count; i++) {
+    const p = dust[dustCursor = (dustCursor + 1) % dust.length];
+    p.mesh.visible = true;
+    p.mesh.position.set(x + rand(-0.25, 0.25), y + rand(0, 0.25), z + rand(-0.25, 0.25));
+    p.mesh.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
+    p.mesh.scale.setScalar(rand(0.6, 1.5));
+    p.vel.set(rand(-1.4, 1.4) * power, rand(1.2, 3.4) * power, rand(1.5, 5) * power);
+    p.life = rand(0.35, 0.7);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Game state
+ * ------------------------------------------------------------------ */
+const STATE = { READY: 0, RUNNING: 1, OVER: 2 };
+let state = STATE.READY;
+
+let speed = CFG.startSpeed;
+let score = 0, milestone = 0;
+let hiScore = 0;
+try { hiScore = parseInt(localStorage.getItem('lowpoly-dino-hi') || '0', 10) || 0; } catch (e) {}
+
+let dinoY = 0, velY = 0, grounded = true, runCycle = 0;
+let holdDown = false, deathTimer = 0, shake = 0;
+let nextSpawn = 40;
+
+const elScore   = document.getElementById('score');
+const elHi      = document.getElementById('hi');
+const elOverlay = document.getElementById('overlay');
+const elCard    = document.getElementById('card');
+const elFill    = document.getElementById('speedfill');
+elHi.textContent = 'HI ' + String(hiScore).padStart(5, '0');
+
+function resetGame() {
+  for (const o of obstacles) scene.remove(o.obj);
+  obstacles.length = 0;
+  speed = CFG.startSpeed;
+  score = 0; milestone = 0;
+  dinoY = 0; velY = 0; grounded = true; runCycle = 0;
+  deathTimer = 0; shake = 0;
+  nextSpawn = rand(26, 34);
+  for (let z = -46; z > CFG.spawnZ; z -= rand(30, 42)) spawnObstacle(z);
+  dino.root.rotation.set(0, 0, 0);
+  dino.rig.rotation.set(0, 0, 0);
+  dino.rig.scale.set(1, 1, 1);
+  elScore.textContent = '0';
+  state = STATE.RUNNING;
+  elOverlay.classList.add('hidden');
+}
+
+function gameOver() {
+  state = STATE.OVER;
+  const final = Math.floor(score);
+  deathTimer = 0;
+  shake = 0.55;
+  puff(14, 0, 0.4, 0, 1.6);
+  if (final > hiScore) {
+    hiScore = final;
+    try { localStorage.setItem('lowpoly-dino-hi', String(hiScore)); } catch (e) {}
+  }
+  elHi.textContent = 'HI ' + String(hiScore).padStart(5, '0');
+  elCard.innerHTML =
+    '<h1>OUCH!</h1>' +
+    '<div class="final">SCORE ' + final + '</div>' +
+    '<p>Best run: <strong>' + hiScore + '</strong></p>' +
+    '<p><kbd>SPACE</kbd> or tap to run again</p>' +
+    '<div class="hint">the desert never ends</div>';
+  elOverlay.classList.remove('hidden');
+}
+
+function jump() {
+  if (!grounded) return;
+  velY = CFG.jumpForce;
+  grounded = false;
+  puff(6, 0, 0.15, 0.3, 0.9);
+}
+
+function press() {
+  if (state === STATE.RUNNING) jump();
+  else if (state === STATE.READY) resetGame();
+  else if (state === STATE.OVER && deathTimer > 0.6) resetGame();
+}
+
+/* ------------------------------------------------------------------ *
+ * Input
+ * ------------------------------------------------------------------ */
+addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Enter') {
+    e.preventDefault();
+    if (!e.repeat) press();
+  }
+  if (e.code === 'ArrowDown' || e.code === 'KeyS') { e.preventDefault(); holdDown = true; }
+  if (e.code === 'KeyR' && state === STATE.OVER) resetGame();
+});
+addEventListener('keyup', e => {
+  if (e.code === 'ArrowDown' || e.code === 'KeyS') holdDown = false;
+  // short-hop: cut the jump when the key is released early
+  if ((e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') && velY > 6) velY = 6;
+});
+addEventListener('pointerdown', e => { e.preventDefault(); press(); }, { passive: false });
+addEventListener('blur', () => { holdDown = false; });
+
+/* ------------------------------------------------------------------ *
+ * Resize
+ * ------------------------------------------------------------------ */
+function onResize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w / h;
+  // pull the camera back a little on narrow/portrait screens so the action stays framed
+  const portrait = clamp(1.35 - camera.aspect, 0, 0.9);
+  camBase.set(3.4 - portrait * 1.5, 3.5 + portrait * 0.8, 9.2 + portrait * 5.5);
+  camLook.set(0, 1.6 - portrait * 0.5, -9);
+  camera.fov = 52 + portrait * 4;
+  camera.updateProjectionMatrix();
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(w, h);
+}
+addEventListener('resize', onResize);
+onResize();
+
+/* ------------------------------------------------------------------ *
+ * Collision
+ * ------------------------------------------------------------------ */
+function hits(ob) {
+  const DHW = 0.42, DHD = 0.62, DH = 1.95;      // forgiving dino hitbox
+  const dx = Math.abs(ob.obj.position.x - 0);
+  const dz = Math.abs(ob.obj.position.z - 0);
+  if (dx > ob.hw + DHW) return false;
+  if (dz > ob.hd + DHD) return false;
+  return dinoY < ob.h * 0.92 && dinoY + DH > 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * Main loop
+ * ------------------------------------------------------------------ */
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t  = clock.elapsedTime;
+
+  const moving = state === STATE.RUNNING;
+  // world keeps drifting slowly on the menu / after a crash, so it never feels frozen
+  const worldSpeed = moving ? speed : (state === STATE.READY ? 7 : Math.max(0, speed * (1 - deathTimer * 1.8)));
+
+  if (moving) {
+    speed = Math.min(CFG.maxSpeed, speed + CFG.accel * dt);
+    score += dt * speed * CFG.scoreRate;
+    const s = Math.floor(score);
+    elScore.textContent = s;
+    if (s >= milestone + 100) {
+      milestone = Math.floor(s / 100) * 100;
+      elScore.classList.remove('flash');
+      void elScore.offsetWidth;
+      elScore.classList.add('flash');
+    }
+    elFill.style.width = ((speed - CFG.startSpeed) / (CFG.maxSpeed - CFG.startSpeed) * 100) + '%';
+  } else if (state === STATE.OVER) {
+    deathTimer += dt;
+  }
+
+  /* ---- dino physics ---- */
+  if (state !== STATE.OVER) {
+    if (!grounded) {
+      velY -= CFG.gravity * dt;
+      if (holdDown) velY -= CFG.fastFall * dt;
+      dinoY += velY * dt;
+      if (dinoY <= 0) {
+        const impact = -velY;
+        dinoY = 0; velY = 0; grounded = true;
+        puff(Math.min(9, 3 + impact * 0.25), 0, 0.1, 0.3, 0.9);
+        dino.rig.scale.set(1.16, 0.82, 1.1);       // squash on landing
+      }
+    }
+  } else {
+    // crumple to the ground
+    velY -= CFG.gravity * dt;
+    dinoY = Math.max(0, dinoY + velY * dt);
+    dino.root.rotation.z = Math.min(1.15, dino.root.rotation.z + dt * 2.4);
+    dino.root.rotation.x = Math.min(0.4, dino.root.rotation.x + dt * 0.8);
+  }
+
+  dino.root.position.y = dinoY;
+  dino.rig.scale.lerp(new THREE.Vector3(1, 1, 1), 1 - Math.pow(0.001, dt));
+
+  /* ---- character animation ---- */
+  if (state !== STATE.OVER) {
+    runCycle += dt * (4.6 + worldSpeed * 0.42);
+    if (grounded) {
+      const sw = Math.sin(runCycle), sw2 = Math.sin(runCycle + Math.PI);
+      dino.legs[0].rotation.x = sw * 0.95;
+      dino.legs[1].rotation.x = sw2 * 0.95;
+      dino.rig.position.y = Math.abs(Math.sin(runCycle)) * 0.11;
+      dino.rig.rotation.x = -0.06 + Math.sin(runCycle * 2) * 0.03;
+      dino.arms[0].rotation.x = sw2 * 0.5 - 0.2;
+      dino.arms[1].rotation.x = sw * 0.5 - 0.2;
+      if (moving && Math.sin(runCycle) > 0.985 && Math.random() < 0.6) puff(1, rand(-0.3, 0.3), 0.06, 0.4, 0.45);
+    } else {
+      dino.legs[0].rotation.x = THREE.MathUtils.lerp(dino.legs[0].rotation.x, -0.75, dt * 9);
+      dino.legs[1].rotation.x = THREE.MathUtils.lerp(dino.legs[1].rotation.x, -0.3, dt * 9);
+      dino.rig.position.y = 0;
+      dino.rig.rotation.x = THREE.MathUtils.lerp(dino.rig.rotation.x, clamp(-velY * 0.022, -0.28, 0.3), dt * 8);
+      dino.arms[0].rotation.x = dino.arms[1].rotation.x = -0.9;
+    }
+    dino.tail.rotation.y = Math.sin(runCycle * 0.5) * 0.22;
+    dino.tail.rotation.x = -0.12 + Math.sin(runCycle) * 0.07;
+    dino.head.rotation.x = Math.sin(runCycle + 0.6) * 0.06;
+  }
+
+  blob.position.set(0, 0.02, 0);
+  const shrink = clamp(1 - dinoY * 0.22, 0.35, 1);
+  blob.scale.setScalar(shrink);
+  blob.material.opacity = 0.3 * shrink;
+
+  /* ---- obstacles ---- */
+  if (moving) {
+    nextSpawn -= worldSpeed * dt;
+    if (nextSpawn <= 0) {
+      spawnObstacle(CFG.spawnZ);
+      const t0 = (speed - CFG.startSpeed) / (CFG.maxSpeed - CFG.startSpeed);
+      nextSpawn = speed * rand(0.78, 0.78 + 0.75 * (1 - t0 * 0.45)) + rand(2, 9);
+    }
+  }
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const ob = obstacles[i];
+    ob.obj.position.z += worldSpeed * dt;
+    if (ob.obj.position.z > CFG.despawnZ) {
+      scene.remove(ob.obj);
+      obstacles.splice(i, 1);
+      continue;
+    }
+    if (moving && hits(ob)) { gameOver(); break; }
+  }
+
+  /* ---- scenery recycling ---- */
+  for (const o of scenery) {
+    o.position.z += worldSpeed * dt;
+    if (o.position.z > CFG.despawnZ) {
+      const z = o.position.z - (SCENE_LEN + CFG.despawnZ);
+      placeScenery(o, z);
+    }
+  }
+  for (const c of parallax) {
+    c.position.z += worldSpeed * dt * c.userData.factor;
+    c.position.x += dt * 0.35;
+    if (c.position.z > 20) { c.position.z = -300; c.position.x = rand(-90, 90); }
+    if (c.position.x > 100) c.position.x = -100;
+  }
+
+  /* ---- dust ---- */
+  for (const p of dust) {
+    if (p.life <= 0) { if (p.mesh.visible) p.mesh.visible = false; continue; }
+    p.life -= dt;
+    p.vel.y -= 9 * dt;
+    p.mesh.position.addScaledVector(p.vel, dt);
+    p.mesh.position.z += worldSpeed * dt * 0.55;
+    p.mesh.rotation.x += dt * 4;
+    p.mesh.rotation.z += dt * 3;
+    p.mesh.scale.multiplyScalar(1 - dt * 1.1);
+    if (p.mesh.position.y < 0.05 || p.life <= 0) { p.life = 0; p.mesh.visible = false; }
+  }
+
+  /* ---- camera ---- */
+  shake = Math.max(0, shake - dt * 1.2);
+  const sp = (worldSpeed - CFG.startSpeed) / (CFG.maxSpeed - CFG.startSpeed);
+  camera.position.x = camBase.x + Math.sin(t * 1.3) * 0.06 + rand(-shake, shake) * 0.5;
+  camera.position.y = camBase.y + dinoY * 0.32 + Math.sin(t * 2.1) * 0.04 + rand(-shake, shake) * 0.5;
+  camera.position.z = camBase.z + clamp(sp, 0, 1) * 1.4;
+  camera.lookAt(camLook.x, camLook.y + dinoY * 0.42, camLook.z - clamp(sp, 0, 1) * 3);
+
+  sun.position.set(-14, 22, 12);
+  sun.target.position.set(0, 0, -10);
+
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
