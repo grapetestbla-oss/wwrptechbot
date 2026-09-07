@@ -1,0 +1,64 @@
+name: Build TargetVPN IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base:
+        description: "Адрес бэкенда, например https://vpn.example.com"
+        required: true
+      version_name:
+        description: "Версия приложения"
+        required: false
+        default: "1.0.0"
+  push:
+    paths:
+      - "targetvpn/ios/**"
+      - ".github/workflows/ios.yml"
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Поставить XcodeGen
+        run: brew install xcodegen
+
+      - name: Сгенерировать проект
+        working-directory: targetvpn/ios
+        run: xcodegen generate
+
+      - name: Проверить сборку под симулятор
+        working-directory: targetvpn/ios
+        run: |
+          API_BASE="${{ github.event.inputs.api_base || 'https://example.com' }}"
+          xcodebuild build \
+            -project TargetVPN.xcodeproj \
+            -scheme TargetVPN \
+            -destination 'generic/platform=iOS Simulator' \
+            API_BASE="$API_BASE" \
+            CODE_SIGNING_ALLOWED=NO | xcpretty || exit 1
+
+      - name: Собрать неподписанный IPA
+        working-directory: targetvpn/ios
+        run: |
+          API_BASE="${{ github.event.inputs.api_base || 'https://example.com' }}"
+          VERSION="${{ github.event.inputs.version_name || '1.0.0' }}"
+          xcodebuild archive \
+            -project TargetVPN.xcodeproj \
+            -scheme TargetVPN \
+            -configuration Release \
+            -archivePath build/TargetVPN.xcarchive \
+            -destination 'generic/platform=iOS' \
+            API_BASE="$API_BASE" \
+            MARKETING_VERSION="$VERSION" \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO | xcpretty
+          mkdir -p build/Payload
+          cp -R build/TargetVPN.xcarchive/Products/Applications/TargetVPN.app build/Payload/
+          cd build && zip -qry "targetvpn-${VERSION}-unsigned.ipa" Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: targetvpn-ipa
+          path: targetvpn/ios/build/*.ipa
+          retention-days: 30

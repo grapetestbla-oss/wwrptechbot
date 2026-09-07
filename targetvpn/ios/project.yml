@@ -1,0 +1,46 @@
+# Проект генерируется XcodeGen: держать .xcodeproj в репозитории неудобно,
+# он постоянно конфликтует при слиянии.
+name: TargetVPN
+options:
+  bundleIdPrefix: us.targetvpn
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: ""
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGNING_ALLOWED: "NO"
+
+targets:
+  TargetVPN:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: us.targetvpn.client
+        INFOPLIST_KEY_CFBundleDisplayName: TargetVPN
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        # Адрес бэкенда подставляется при сборке через xcodebuild API_BASE=...
+        API_BASE: "$(API_BASE)"
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: TargetVPN
+        UILaunchScreen: {}
+        APIBase: "$(API_BASE)"
+        LSApplicationQueriesSchemes:
+          - v2box
+          - streisand
+          - shadowrocket
+          - sing-box
+          - hiddify
