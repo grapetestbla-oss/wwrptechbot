@@ -1,7 +1,7 @@
+import json
 from functools import lru_cache
-from typing import List
 
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,8 +34,8 @@ class Settings(BaseSettings):
     marzban_password: str = Field(default="", alias="MARZBAN_PASSWORD")
     marzban_verify_ssl: bool = Field(default=True, alias="MARZBAN_VERIFY_SSL")
     # Инбаунды Xray, в которые добавляются юзеры: {"vless": ["VLESS TCP REALITY"]}
-    marzban_inbounds: dict = Field(default_factory=lambda: {"vless": ["VLESS TCP REALITY"]},
-                                   alias="MARZBAN_INBOUNDS")
+    marzban_inbounds_raw: str = Field(default='{"vless": ["VLESS TCP REALITY"]}',
+                                      alias="MARZBAN_INBOUNDS")
     # Префикс имён пользователей на ноде, чтобы не конфликтовать с ручными юзерами.
     marzban_prefix: str = Field(default="tv", alias="MARZBAN_PREFIX")
     # Демо-режим: не ходить на ноду, генерировать фейковые ключи (для локальной разработки).
@@ -64,22 +64,21 @@ class Settings(BaseSettings):
     # --- Прочее ---
     trial_enabled: bool = Field(default=True, alias="TRIAL_ENABLED")
     referral_bonus_days: int = Field(default=7, alias="REFERRAL_BONUS_DAYS")
-    cors_origins: List[str] = Field(default_factory=lambda: ["*"], alias="CORS_ORIGINS")
+    cors_origins_raw: str = Field(default="*", alias="CORS_ORIGINS")
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def _split_origins(cls, v):
-        if isinstance(v, str):
-            return [x.strip() for x in v.split(",") if x.strip()]
-        return v
+    @property
+    def cors_origins(self) -> list[str]:
+        """CORS_ORIGINS перечисляется через запятую."""
+        values = [x.strip() for x in self.cors_origins_raw.split(",") if x.strip()]
+        return values or ["*"]
 
-    @field_validator("marzban_inbounds", mode="before")
-    @classmethod
-    def _parse_inbounds(cls, v):
-        if isinstance(v, str) and v.strip():
-            import json
-            return json.loads(v)
-        return v
+    @property
+    def marzban_inbounds(self) -> dict:
+        """Инбаунды задаются JSON-строкой; кривое значение не должна ронять сервис."""
+        try:
+            return json.loads(self.marzban_inbounds_raw) or {}
+        except (TypeError, ValueError):
+            return {"vless": ["VLESS TCP REALITY"]}
 
 
 @lru_cache

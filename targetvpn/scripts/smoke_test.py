@@ -57,9 +57,37 @@ def check(label: str, condition: bool, extra: str = "") -> None:
         raise SystemExit(1)
 
 
+def check_env_parsing() -> None:
+    """Регрессия: pydantic-settings разбирал списки и словари из .env как JSON
+    и падал на обычной строке вроде CORS_ORIGINS=https://site.tld."""
+    import tempfile
+
+    from app.config import Settings
+
+    cases = [
+        ("CORS_ORIGINS=https://a.tld\nMARZBAN_INBOUNDS={\"vless\": [\"X\"]}\n",
+         ["https://a.tld"], {"vless": ["X"]}),
+        ("CORS_ORIGINS=https://a.tld, https://b.tld\n"
+         "MARZBAN_INBOUNDS='{\"vless\": [\"Y\"]}'\n",
+         ["https://a.tld", "https://b.tld"], {"vless": ["Y"]}),
+        ("CORS_ORIGINS=*\n", ["*"], {"vless": ["VLESS TCP REALITY"]}),
+    ]
+    for body, origins, inbounds in cases:
+        with tempfile.NamedTemporaryFile("w", suffix=".env", delete=False) as handle:
+            handle.write("BOT_TOKEN=1:AA\n" + body)
+            path = handle.name
+        settings = Settings(_env_file=path)
+        check(f"настройки читаются из .env ({body.splitlines()[0][:28]}…)",
+              settings.cors_origins == origins and settings.marzban_inbounds == inbounds,
+              f"{settings.cors_origins} / {settings.marzban_inbounds}")
+        Path(path).unlink()
+
+
 async def main() -> None:
     if DB_PATH.exists():
         DB_PATH.unlink()
+
+    check_env_parsing()
 
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):

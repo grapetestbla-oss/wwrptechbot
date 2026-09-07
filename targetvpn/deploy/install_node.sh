@@ -115,8 +115,15 @@ EOF
 fi
 
 # --- 4. Администратор панели ----------------------------------------------
-PANEL_USER=${TVPN_PANEL_USER:-tvadmin}
-PANEL_PASS=${TVPN_PANEL_PASS:-$(openssl rand -hex 16)}
+# Пароль панели храним на диске: иначе каждый повторный запуск заводил бы
+# новый пароль и перезаписывал администратора.
+CRED_FILE=/opt/targetvpn/.node-credentials
+if [[ -f "$CRED_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$CRED_FILE"
+fi
+PANEL_USER=${TVPN_PANEL_USER:-${PANEL_USER:-tvadmin}}
+PANEL_PASS=${TVPN_PANEL_PASS:-${PANEL_PASS:-$(openssl rand -hex 16)}}
 
 panel_token_ok() {
   curl -sS --max-time 10 -X POST "http://127.0.0.1:${PANEL_PORT}/api/admin/token" \
@@ -145,6 +152,9 @@ with GetDB() as db:
 
   if panel_token_ok; then
     echo "Создан администратор ${PANEL_USER}"
+    mkdir -p "$(dirname "$CRED_FILE")"
+    printf 'PANEL_USER=%s\nPANEL_PASS=%s\n' "$PANEL_USER" "$PANEL_PASS" > "$CRED_FILE"
+    chmod 600 "$CRED_FILE"
   else
     warn "Автоматически создать администратора не вышло."
     warn "Сделайте вручную:  marzban cli admin create --sudo"
