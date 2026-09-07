@@ -84,7 +84,11 @@ cd "$APP_DIR"
 say "Виртуальное окружение и зависимости"
 python3 -m venv .venv
 .venv/bin/pip install -q --upgrade pip
-.venv/bin/pip install -q -r backend/requirements.txt -r bot/requirements.txt
+# Оба файла ставим одной командой, чтобы pip подобрал совместимый набор версий.
+.venv/bin/pip install -q -r backend/requirements.txt -r bot/requirements.txt \
+  || die "не удалось установить зависимости (см. вывод pip выше)"
+.venv/bin/python -c "import fastapi, aiogram, sqlalchemy, jwt, httpx" \
+  || die "зависимости установились неполностью"
 
 # --- 5. Конфигурация ------------------------------------------------------
 if [[ $REUSE -eq 1 ]]; then
