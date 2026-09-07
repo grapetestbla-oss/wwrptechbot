@@ -16,7 +16,21 @@
   Telegram открывает Mini App только по HTTPS, поэтому сертификат обязателен.
 - Токен бота от @BotFather.
 
-## Установка
+## Установка одной командой
+
+Ставит бота, Mini App и VPN-ноду разом. Команда в одну строку — её нельзя
+сломать при копировании:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/grapetestbla-oss/wwrptechbot/claude/telegram-vpn-mini-app-jn457e/targetvpn/deploy/bootstrap.sh | TVPN_DOMAIN=вашдомен TVPN_BOT_TOKEN=токен TVPN_OWNER_ID=ваш_id TVPN_NODE_TITLE=Швеция bash
+```
+
+Перед установкой скрипт сам проверит, что A-запись домена указывает на этот
+сервер, и остановится с понятным сообщением, если нет — так вы не сожжёте
+попытку выпуска сертификата. Отключить проверку: `TVPN_SKIP_DNS=1`.
+Не ставить ноду на этот же сервер: `TVPN_WITH_NODE=0`.
+
+## Установка по шагам
 
 ```bash
 apt update && apt install -y git
