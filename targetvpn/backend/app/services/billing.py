@@ -12,8 +12,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
-from ..models import (Payment, PaymentStatus, Plan, PromoCode, PromoRedemption,
-                      User, utcnow)
+from ..models import (Device, Payment, PaymentKind, PaymentStatus, Plan, PromoCode,
+                      PromoRedemption, User, utcnow)
+from . import hwid as hwid_service
+from . import settings_store
 from .subs import aware, grant_subscription, notify
 
 log = logging.getLogger("billing")
@@ -245,11 +247,94 @@ async def lzt_check_pending(session: AsyncSession) -> int:
     return activated
 
 
+async def start_unbind_payment(session: AsyncSession, user: User, device: Device,
+                               method: str) -> tuple[Payment, str]:
+    """Счёт на отвязку HWID. Возвращает платёж и ссылку (или invoice link звёзд)."""
+    if device.hwid is None:
+        raise BillingError("У этого устройства нет привязки")
+    price = await settings_store.get_float(session, "unbind_price_rub", 50.0)
+    title = "TargetVPN · отвязка устройства"
+
+    payment = Payment(user_id=user.id, plan_id=None, provider=method,
+                      kind=PaymentKind.unbind, device_id=device.id,
+                      amount_rub=price, currency="RUB", payload="{}")
+    session.add(payment)
+    await session.flush()
+
+    if method == "stars":
+        amount = stars_amount(price)
+        payment.amount_native, payment.currency = amount, "XTR"
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(
+                f"https://api.telegram.org/bot{settings.bot_token}/createInvoiceLink",
+                json={"title": title,
+                      "description": f"Смена устройства для «{device.name}»",
+                      "payload": f"tvpn:{payment.id}", "currency": "XTR",
+                      "prices": [{"label": "Отвязка HWID", "amount": amount}]})
+        data = resp.json()
+        if not data.get("ok"):
+            raise BillingError(f"Telegram отклонил счёт: {data.get('description')}")
+        payment.external_id = data["result"]
+        await session.commit()
+        return payment, data["result"]
+
+    if method == "cryptobot":
+        if not settings.cryptobot_token:
+            raise BillingError("Оплата криптой временно недоступна")
+        amount = crypto_amount(price)
+        payment.amount_native, payment.currency = amount, settings.cryptobot_asset
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(
+                f"{settings.cryptobot_api}/createInvoice",
+                headers={"Crypto-Pay-API-Token": settings.cryptobot_token},
+                json={"asset": settings.cryptobot_asset, "amount": str(amount),
+                      "description": title, "payload": str(payment.id), "expires_in": 3600})
+        data = resp.json()
+        if not data.get("ok"):
+            raise BillingError(f"CryptoBot отклонил счёт: {data.get('error')}")
+        payment.external_id = str(data["result"]["invoice_id"])
+        url = data["result"]["bot_invoice_url"]
+        payment.payload = json.dumps({"url": url})
+        await session.commit()
+        return payment, url
+
+    if method == "lzt":
+        if not lzt_enabled():
+            raise BillingError("Оплата через LZT Market временно недоступна")
+        amount = int(math.ceil(price))
+        payment.amount_native = amount
+        payment.external_id = lzt_comment(payment.id)
+        url = settings.lzt_transfer_url.format(username=settings.lzt_username,
+                                               user_id=settings.lzt_user_id,
+                                               amount=amount, comment=payment.external_id)
+        payment.payload = json.dumps({"url": url, "comment": payment.external_id,
+                                      "amount": amount})
+        await session.commit()
+        return payment, url
+
+    raise BillingError("Неизвестный способ оплаты")
+
+
 async def complete_payment(session: AsyncSession, payment: Payment) -> None:
     """Единая точка выдачи подписки после успешной оплаты (любой провайдер)."""
     if payment.status == PaymentStatus.paid:
         return
     user = (await session.execute(select(User).where(User.id == payment.user_id))).scalar_one()
+
+    if payment.kind == PaymentKind.unbind:
+        device = (await session.execute(select(Device).where(
+            Device.id == payment.device_id))).scalar_one_or_none()
+        if device is None:
+            raise BillingError("Устройство не найдено")
+        await hwid_service.unbind(session, device)
+        payment.status = PaymentStatus.paid
+        payment.paid_at = utcnow()
+        await notify(session, user.tg_id,
+                     f"🔓 Устройство «{device.name}» отвязано. Откройте приложение "
+                     "TargetVPN на новом телефоне и введите код привязки из мини-аппа.")
+        await session.commit()
+        return
+
     plan = (await session.execute(select(Plan).where(Plan.id == payment.plan_id))).scalar_one_or_none()
     if plan is None:
         raise BillingError("Тариф больше не существует, свяжитесь с поддержкой")

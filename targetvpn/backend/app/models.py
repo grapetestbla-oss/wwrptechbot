@@ -22,6 +22,11 @@ class Role(str, enum.Enum):
     owner = "owner"
 
 
+class PaymentKind(str, enum.Enum):
+    subscription = "subscription"
+    unbind = "unbind"
+
+
 class PaymentStatus(str, enum.Enum):
     pending = "pending"
     paid = "paid"
@@ -142,6 +147,14 @@ class Device(Base):
     remote_sub_url: Mapped[str] = mapped_column(Text, default="")
     used_traffic: Mapped[float] = mapped_column(Float, default=0.0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Привязка к железу: одно устройство приложения = один HWID.
+    hwid: Mapped[str | None] = mapped_column(String(128), index=True)
+    hwid_bound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    client_token: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
+    client_model: Mapped[str] = mapped_column(String(64), default="")
+    app_version: Mapped[str] = mapped_column(String(32), default="")
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    unbind_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -156,6 +169,8 @@ class Payment(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id", ondelete="SET NULL"))
     provider: Mapped[str] = mapped_column(String(24))  # cryptobot | stars | manual | lzt
+    kind: Mapped[PaymentKind] = mapped_column(Enum(PaymentKind), default=PaymentKind.subscription)
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id", ondelete="SET NULL"))
     external_id: Mapped[str | None] = mapped_column(String(128), index=True)
     amount_rub: Mapped[float] = mapped_column(Float, default=0.0)
     amount_native: Mapped[float] = mapped_column(Float, default=0.0)
@@ -164,6 +179,30 @@ class Payment(Base):
     payload: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BindCode(Base):
+    """Одноразовый код, которым приложение привязывается к аккаунту Telegram."""
+
+    __tablename__ = "bind_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    node_id: Mapped[int | None] = mapped_column(ForeignKey("nodes.id", ondelete="SET NULL"))
+    is_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Setting(Base):
+    """Настройки, которые владелец меняет из админки без правки .env."""
+
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class PromoCode(Base):

@@ -22,6 +22,10 @@ Mini App, ключи автоматически выдаются на второ
   комментарием, подтверждается опросом их API), промокоды со скидкой и бонусными
   днями, рефералка (+7 дней за первую оплату приглашённого). В мини-аппе показываются
   только реально настроенные способы.
+- **Своё приложение (Android).** Подписка привязывается к телефону по HWID:
+  код привязки из мини-аппа → постоянный токен, который работает только на этом
+  устройстве. Смена телефона — платная отвязка (по умолчанию 50 ₽, цена в
+  админке), администратор отвязывает бесплатно. Исходники и сборка — `android/`.
 - **Несколько локаций.** Каждая нода — отдельный ВПС с Marzban; пользователь выбирает
   страну при создании устройства, ключ выпускается именно на этой ноде. Ноды заводятся
   и правятся в админке, отключение локации не ломает уже выданные ключи.
@@ -40,12 +44,16 @@ Mini App, ключи автоматически выдаются на второ
 ```
 backend/            FastAPI: API мини-аппа, админка, вебхуки, ссылка-подписка
   app/routers/      api.py (витрина) · admin.py (админка) · payments.py (оплата, /sub)
+                    client.py (API мобильного приложения)
   app/services/     subs.py (подписки и устройства) · billing.py (платежи)
+                    hwid.py (привязка приложения) · settings_store.py (настройки)
   app/marzban.py    клиент панели на VPN-ноде
 bot/bot.py          aiogram-бот: вход в Mini App, оплата звёздами, уведомления
 miniapp/            Mini App без сборки: index.html · styles.css · app.js · admin.js
-deploy/             install.sh, systemd, nginx, docker-compose,
-                    DEPLOY.md (основной ВПС) · NODE_SETUP.md (VPN-нода)
+android/            приложение TargetVPN (Kotlin) + инструкция по сборке
+deploy/             install.sh (бот и Mini App) · install_node.sh (Marzban + Reality)
+                    uninstall.sh · systemd, nginx, docker-compose
+                    DEPLOY.md (развёртывание) · NODE_SETUP.md (нода вручную)
 scripts/            smoke_test.py (сквозные тесты) · check_config.py (диагностика)
 ```
 
@@ -88,7 +96,7 @@ systemctl enable --now targetvpn-api targetvpn-bot
 ### 4. Проверка
 
 ```bash
-.venv/bin/python scripts/smoke_test.py     # 60+ проверок в демо-режиме, без ноды
+.venv/bin/python scripts/smoke_test.py     # 80 проверок в демо-режиме, без ноды
 .venv/bin/python scripts/check_config.py   # диагностика боевой установки
 ```
 

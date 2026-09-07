@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import SessionLocal, init_db
-from .routers import admin, api, payments
+from .routers import admin, api, client, payments
 from .services.billing import lzt_check_pending, lzt_enabled
 from .services.subs import expire_pass
 
@@ -71,6 +71,7 @@ app.add_middleware(
 )
 
 app.include_router(api.router)
+app.include_router(client.router)
 app.include_router(admin.router)
 app.include_router(payments.router)
 

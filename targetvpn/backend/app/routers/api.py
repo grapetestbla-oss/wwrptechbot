@@ -10,12 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import settings
 from ..db import get_session
 from ..models import Device, Node, Payment, PaymentStatus, Plan, User, utcnow
-from ..schemas import (AuthRequest, AuthResponse, DeviceCreate, DeviceOut,
-                       NodeOut, PlanOut, PromoCheck, PurchaseRequest,
-                       PurchaseResponse, StateOut, SubscriptionOut, UserOut)
+from ..schemas import (AuthRequest, AuthResponse, BindCodeOut, DeviceCreate,
+                       DeviceOut, NodeOut, PlanOut, PromoCheck, PurchaseRequest,
+                       PurchaseResponse, StateOut, SubscriptionOut, UnbindRequest,
+                       UserOut)
 from ..security import (create_token, current_user, get_or_create_user,
                         verify_init_data)
-from ..services import billing, subs
+from ..services import billing, hwid as hwid_service, settings_store, subs
 
 log = logging.getLogger("api")
 router = APIRouter(prefix="/api", tags=["app"])
@@ -63,6 +64,10 @@ def device_out(device: Device, node: Node | None = None) -> DeviceOut:
     return DeviceOut(id=device.id, name=device.name, platform=device.platform,
                      node_title=node.title if node else "",
                      node_flag=node.flag if node else "",
+                     hwid=hwid_service.mask(device.hwid),
+                     hwid_bound=device.hwid is not None,
+                     client_model=device.client_model,
+                     app_version=device.app_version,
                      config_url=device.config_url,
                      used_traffic_gb=round(device.used_traffic / 1024 ** 3, 2),
                      is_active=device.is_active, created_at=device.created_at)
@@ -116,6 +121,9 @@ async def state(user: User = Depends(current_user), session: AsyncSession = Depe
                              and sub is None and ready),
         nodes_ready=ready,
         payment_methods=available_payment_methods(),
+        apk_url=await settings_store.get(session, "apk_url"),
+        apk_version=await settings_store.get(session, "apk_version"),
+        unbind_price_rub=await settings_store.get_float(session, "unbind_price_rub", 50.0),
     )
 
 
@@ -194,6 +202,41 @@ async def refresh_device(device_id: int, user: User = Depends(current_user),
     node = (await session.execute(select(Node).where(
         Node.id == device.node_id))).scalar_one_or_none() if device.node_id else None
     return device_out(device, node)
+
+
+@router.post("/bind-code", response_model=BindCodeOut)
+async def bind_code(user: User = Depends(current_user),
+                    session: AsyncSession = Depends(get_session)):
+    """Код для приложения TargetVPN: вводится один раз при первом запуске."""
+    try:
+        bind = await hwid_service.issue_bind_code(session, user)
+    except hwid_service.HwidError as exc:
+        raise HTTPException(400, str(exc))
+    ttl = int((subs.aware(bind.expires_at) - utcnow()).total_seconds())
+    return BindCodeOut(code=bind.code, expires_at=bind.expires_at, ttl_seconds=max(0, ttl))
+
+
+@router.post("/unbind", response_model=PurchaseResponse)
+async def unbind(payload: UnbindRequest, user: User = Depends(current_user),
+                 session: AsyncSession = Depends(get_session)):
+    """Платная отвязка HWID — чтобы пересесть на другой телефон."""
+    device = (await session.execute(select(Device).where(
+        Device.id == payload.device_id, Device.user_id == user.id))).scalar_one_or_none()
+    if device is None:
+        raise HTTPException(404, "Устройство не найдено")
+    if device.hwid is None:
+        raise HTTPException(400, "Это устройство не привязано к приложению")
+    try:
+        payment, url = await billing.start_unbind_payment(session, user, device, payload.method)
+    except billing.BillingError as exc:
+        raise HTTPException(400, str(exc))
+    meta = json.loads(payment.payload or "{}")
+    return PurchaseResponse(
+        payment_id=payment.id, method=payload.method,
+        invoice_url="" if payload.method == "stars" else url,
+        invoice_link=url if payload.method == "stars" else "",
+        amount_rub=payment.amount_rub, amount_native=payment.amount_native,
+        currency=payment.currency, comment=meta.get("comment", ""))
 
 
 @router.post("/promo/check")

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TargetVPN</string>
+    <string name="tagline">Доступ без блокировок</string>
+
+    <string name="bind_title">Привязка устройства</string>
+    <string name="bind_hint">Откройте бота TargetVPN в Telegram, нажмите «Показать код привязки» и введите его здесь. Подписка закрепится за этим телефоном.</string>
+    <string name="code_hint">КОД</string>
+    <string name="bind_action">Привязать</string>
+    <string name="bound_ok">Устройство привязано</string>
+    <string name="enter_code">Введите код из мини-аппа</string>
+
+    <string name="status_checking">Проверяем подписку…</string>
+    <string name="status_active">Подписка активна</string>
+    <string name="status_inactive">Подписка неактивна</string>
+    <string name="subscription_ended">Продлите подписку в Telegram-боте</string>
+    <string name="this_device">Это устройство</string>
+    <string name="location_fmt">Локация: %1$s</string>
+    <string name="expires_fmt">Осталось %1$s</string>
+    <string name="left_days">%1$d дн. %2$d ч.</string>
+    <string name="left_hours">%1$d ч. %2$d мин.</string>
+    <string name="left_minutes">%1$d мин.</string>
+
+    <string name="connect">Подключиться</string>
+    <string name="copy_key">Скопировать ключ</string>
+    <string name="refresh">Обновить статус</string>
+    <string name="key_copied">Ключ скопирован</string>
+    <string name="no_key">Ключ ещё не выдан</string>
+    <string name="install_client">Ключ скопирован. Установите v2rayNG и вставьте его</string>
+    <string name="error_generic">Не удалось связаться с сервером</string>
+
+    <string name="unbind_note">Подписка привязана к этому устройству. Чтобы перейти на другой телефон, отвяжите устройство в мини-аппе Telegram.</string>
+</resources>

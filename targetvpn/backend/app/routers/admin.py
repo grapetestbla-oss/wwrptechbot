@@ -14,9 +14,10 @@ from ..models import (AdminLog, Device, Node, Notification, Payment,
                       utcnow)
 from ..schemas import (AdminUserOut, BanRequest, BroadcastRequest, GrantRequest,
                        NodeAdminOut, NodeUpsert, PlanOut, PlanUpsert, PromoUpsert,
-                       RoleRequest, StatsOut)
+                       RoleRequest, SettingsUpsert, StatsOut, UnbindRequest)
 from ..security import current_admin, current_owner
-from ..services import subs
+from ..services import hwid as hwid_service
+from ..services import settings_store, subs
 from .api import plan_out
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -369,5 +370,63 @@ async def disable_node(node_id: int, admin: User = Depends(current_admin),
     node.is_active = False
     node.is_default = False
     await subs.log_admin(session, admin.tg_id, "node_disable", node.code)
+    await session.commit()
+    return {"ok": True}
+
+
+# --- Настройки сервиса ---
+
+@router.get("/settings")
+async def read_settings(admin: User = Depends(current_admin),
+                        session: AsyncSession = Depends(get_session)):
+    return await settings_store.all_values(session)
+
+
+@router.post("/settings")
+async def write_settings(payload: SettingsUpsert, admin: User = Depends(current_admin),
+                         session: AsyncSession = Depends(get_session)):
+    changes = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if "unbind_price_rub" in changes and changes["unbind_price_rub"] < 0:
+        raise HTTPException(400, "Цена отвязки не может быть отрицательной")
+    for key, value in changes.items():
+        await settings_store.set_value(session, key, str(value))
+    await subs.log_admin(session, admin.tg_id, "settings", "",
+                         ", ".join(f"{k}={v}" for k, v in changes.items()))
+    await session.commit()
+    return await settings_store.all_values(session)
+
+
+# --- Привязки устройств ---
+
+@router.get("/devices/{tg_id}")
+async def user_devices(tg_id: int, admin: User = Depends(current_admin),
+                       session: AsyncSession = Depends(get_session)):
+    user = await _get_user(session, tg_id)
+    rows = (await session.execute(select(Device).where(
+        Device.user_id == user.id).order_by(Device.id))).scalars().all()
+    return [{"id": d.id, "name": d.name, "platform": d.platform,
+             "hwid": hwid_service.mask(d.hwid), "hwid_bound": d.hwid is not None,
+             "model": d.client_model, "app_version": d.app_version,
+             "unbind_count": d.unbind_count, "is_active": d.is_active,
+             "last_seen_at": d.last_seen_at.isoformat() if d.last_seen_at else None}
+            for d in rows]
+
+
+@router.post("/unbind")
+async def admin_unbind(payload: UnbindRequest, admin: User = Depends(current_admin),
+                       session: AsyncSession = Depends(get_session)):
+    """Бесплатная отвязка HWID администратором (например, по обращению в поддержку)."""
+    device = (await session.execute(select(Device).where(
+        Device.id == payload.device_id))).scalar_one_or_none()
+    if device is None:
+        raise HTTPException(404, "Устройство не найдено")
+    if device.hwid is None:
+        raise HTTPException(400, "Устройство не привязано")
+    user = (await session.execute(select(User).where(User.id == device.user_id))).scalar_one()
+    await hwid_service.unbind(session, device, reason="admin")
+    await subs.notify(session, user.tg_id,
+                      f"🔓 Администратор отвязал устройство «{device.name}». "
+                      "Можно привязать приложение заново.")
+    await subs.log_admin(session, admin.tg_id, "unbind", str(user.tg_id), device.name)
     await session.commit()
     return {"ok": True}

@@ -5,7 +5,8 @@ const API = (location.origin.includes('localhost') || location.origin.startsWith
 
 const state = { token: '', user: null, sub: null, devices: [], plans: [], nodes: [], subUrl: '',
                 trialAvailable: false, nodesReady: true, supportUrl: '', methods: [],
-                promo: null, timer: null };
+                apkUrl: '', apkVersion: '', unbindPrice: 50, promo: null, timer: null,
+                bindTimer: null };
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -110,8 +111,12 @@ async function refresh() {
   state.trialAvailable = data.trial_available;
   state.methods = data.payment_methods || [];
   state.nodesReady = data.nodes_ready !== false;
+  state.apkUrl = data.apk_url || '';
+  state.apkVersion = data.apk_version || '';
+  state.unbindPrice = data.unbind_price_rub ?? 50;
   renderHome();
   renderDevices();
+  renderAppCard();
   renderProfile();
 }
 
@@ -426,7 +431,7 @@ function renderDevices() {
     <div class="device">
       <div class="device-ico">${PLATFORMS[d.platform] || '📱'}</div>
       <div class="device-info">
-        <b>${esc(d.name)}</b>
+        <b>${esc(d.name)} ${d.hwid_bound ? '<span class="badge ok">📱 привязано</span>' : ''}</b>
         <small>${d.node_flag ? esc(d.node_flag) + ' ' + esc(d.node_title) + ' · ' : ''}${d.is_active ? 'Активно' : 'Отключено'} · ${d.used_traffic_gb} ГБ</small>
       </div>
       <button class="btn btn-sm btn-ghost" data-key="${d.id}">Ключ</button>
@@ -495,6 +500,16 @@ function openDeviceSheet(deviceId) {
     <p class="muted" style="margin-top:-6px;font-size:12.5px">
       ${device.node_title ? esc(device.node_flag) + ' ' + esc(device.node_title) + ' · ' : ''}
       Вставьте ключ в клиент или импортируйте ссылку-подписку.</p>
+    ${device.hwid_bound ? `
+      <div class="card" style="margin-bottom:12px">
+        <b>Привязано к приложению</b>
+        <p class="muted" style="margin:6px 0 0;font-size:12.5px">
+          HWID ${esc(device.hwid)}${device.client_model ? ' · ' + esc(device.client_model) : ''}
+          ${device.app_version ? ' · v' + esc(device.app_version) : ''}<br>
+          Чтобы пересесть на другой телефон, нужна отвязка — ${state.unbindPrice} ₽.</p>
+        <button class="btn btn-ghost wide btn-sm" style="margin-top:10px" data-act="unbind">
+          🔓 Отвязать устройство · ${state.unbindPrice} ₽</button>
+      </div>` : ''}
     <div class="key-box" id="key-box">${esc(link) || 'Ключ выдаётся…'}</div>
     <div class="stack" style="margin-top:12px">
       <button class="btn btn-primary wide" data-act="copy">📋 Скопировать ключ</button>
@@ -523,6 +538,7 @@ function openDeviceSheet(deviceId) {
       } catch (err) { toast(err.message); btn.disabled = false; }
       return;
     }
+    if (act === 'unbind') return openUnbind(device);
     if (act === 'delete') {
       if (!confirm('Удалить устройство и отозвать его ключ?')) return;
       try {
@@ -533,6 +549,118 @@ function openDeviceSheet(deviceId) {
       } catch (err) { toast(err.message); }
     }
   }));
+}
+
+/* ---------- Приложение TargetVPN ---------- */
+
+function renderAppCard() {
+  const box = $('#app-card');
+  if (!box) return;
+  if (!state.sub) { box.innerHTML = ''; return; }
+  box.innerHTML = `
+    <div class="card">
+      <h3 style="margin:0 0 8px;font-size:15px">📱 Приложение TargetVPN</h3>
+      <p class="muted" style="margin:0 0 12px;font-size:13px">
+        Подключение в один тап, без настройки ключей. Приложение привязывается к телефону:
+        доступ работает только на нём, смена устройства — ${state.unbindPrice} ₽.</p>
+      <div class="stack">
+        ${state.apkUrl ? `<button class="btn btn-primary wide" id="btn-apk">
+          ⬇️ Скачать APK${state.apkVersion ? ' · ' + esc(state.apkVersion) : ''}</button>`
+        : '<div class="empty" style="padding:12px">Сборка приложения скоро появится</div>'}
+        <button class="btn btn-ghost wide" id="btn-bind">🔑 Показать код привязки</button>
+      </div>
+    </div>`;
+  $('#btn-apk')?.addEventListener('click', () => {
+    tg?.openLink?.(state.apkUrl) || window.open(state.apkUrl, '_blank');
+  });
+  $('#btn-bind').addEventListener('click', showBindCode);
+}
+
+async function showBindCode() {
+  try {
+    const res = await api('/api/bind-code', { method: 'POST' });
+    openSheet(`
+      <div class="sheet-title">Код привязки</div>
+      <p class="muted" style="margin-top:-6px;font-size:13px">
+        Введите его в приложении TargetVPN на телефоне. Код одноразовый.</p>
+      <div class="status-plan" style="text-align:center;letter-spacing:6px;margin:18px 0 6px"
+        id="bind-code">${esc(res.code)}</div>
+      <div class="muted" style="text-align:center;font-size:13px" id="bind-ttl"></div>
+      <button class="btn btn-primary wide" style="margin-top:16px" id="bind-copy">
+        📋 Скопировать код</button>`);
+    $('#bind-copy').addEventListener('click', () => copy(res.code, 'Код скопирован'));
+
+    clearInterval(state.bindTimer);
+    let left = res.ttl_seconds;
+    const tick = () => {
+      const el = $('#bind-ttl');
+      if (!el) { clearInterval(state.bindTimer); return; }
+      if (left <= 0) {
+        clearInterval(state.bindTimer);
+        el.textContent = 'Код истёк — запросите новый';
+        return;
+      }
+      const m = Math.floor(left / 60), sec = left % 60;
+      el.textContent = `Действует ещё ${m}:${String(sec).padStart(2, '0')}`;
+      left -= 1;
+    };
+    tick();
+    state.bindTimer = setInterval(tick, 1000);
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+function openUnbind(device) {
+  const methods = state.methods.length ? state.methods : ['stars'];
+  openSheet(`
+    <div class="sheet-title">Отвязать устройство</div>
+    <p class="muted" style="margin-top:-6px;font-size:13px">
+      «${esc(device.name)}» перестанет подключаться, и приложение можно будет привязать
+      к другому телефону новым кодом. Стоимость — <b>${state.unbindPrice} ₽</b>.</p>
+    <div class="stack" style="margin-top:14px">
+      ${methods.map((m, i) => `<button class="btn ${i === 0 ? 'btn-primary' : 'btn-ghost'} wide"
+        data-unbind="${m}">${PAY_LABELS[m] || m}</button>`).join('')}
+    </div>`);
+
+  $('#sheet-body').querySelectorAll('[data-unbind]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const method = btn.dataset.unbind;
+      btn.disabled = true;
+      btn.textContent = 'Готовим счёт…';
+      try {
+        const res = await api('/api/unbind', {
+          method: 'POST', body: { device_id: device.id, method },
+        });
+        closeSheet();
+        if (method === 'stars' && res.invoice_link) {
+          tg?.openInvoice?.(res.invoice_link, (status) => {
+            if (status === 'paid') { toast('Оплачено, отвязываем…'); pollUnbind(res.payment_id); }
+          });
+        } else if (method === 'lzt') {
+          openLztInstructions(res);
+          pollUnbind(res.payment_id, 60);
+        } else if (res.invoice_url) {
+          tg?.openTelegramLink?.(res.invoice_url) || window.open(res.invoice_url, '_blank');
+          pollUnbind(res.payment_id, 40);
+        }
+      } catch (err) { toast(err.message); btn.disabled = false; }
+    }));
+}
+
+async function pollUnbind(paymentId, attempts = 20) {
+  for (let i = 0; i < attempts; i += 1) {
+    await new Promise((r) => setTimeout(r, 3000));
+    try {
+      const res = await api(`/api/payments/${paymentId}`);
+      if (res.paid) {
+        haptic('medium');
+        toast('Устройство отвязано — привяжите приложение новым кодом');
+        await refresh();
+        return;
+      }
+    } catch (_) { /* повторим */ }
+  }
 }
 
 /* ---------- Профиль ---------- */

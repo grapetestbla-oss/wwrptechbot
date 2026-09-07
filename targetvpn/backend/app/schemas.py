@@ -64,6 +64,10 @@ class DeviceOut(BaseModel):
     platform: str
     node_title: str = ""
     node_flag: str = ""
+    hwid: str = ""
+    hwid_bound: bool = False
+    client_model: str = ""
+    app_version: str = ""
     config_url: str
     used_traffic_gb: float
     is_active: bool
@@ -79,6 +83,9 @@ class StateOut(BaseModel):
     trial_available: bool = False
     nodes_ready: bool = False
     payment_methods: list[str] = []
+    apk_url: str = ""
+    apk_version: str = ""
+    unbind_price_rub: float = 50.0
 
 
 class DeviceCreate(BaseModel):
@@ -144,6 +151,24 @@ class PurchaseResponse(BaseModel):
 class PromoCheck(BaseModel):
     code: str
     plan_id: int
+
+
+class BindCodeOut(BaseModel):
+    code: str
+    expires_at: datetime
+    ttl_seconds: int
+
+
+class UnbindRequest(BaseModel):
+    device_id: int
+    method: str = "stars"
+
+
+class SettingsUpsert(BaseModel):
+    unbind_price_rub: float | None = None
+    apk_url: str | None = None
+    apk_version: str | None = None
+    bind_code_ttl_min: int | None = None
 
 
 # --- Админка ---

@@ -262,6 +262,89 @@ async def main() -> None:
                       await _billing.lzt_check_pending(s2) == 0)
             _cfg.lzt_token, _cfg.lzt_user_id = "", 0
 
+            # --- привязка приложения по HWID ---
+            r = await c.post("/api/bind-code", headers=auth)
+            check("код привязки выдан", r.status_code == 200 and len(r.json()["code"]) == 6,
+                  r.text[:120])
+            bind_code = r.json()["code"]
+
+            r = await c.post("/api/client/bind", json={
+                "code": bind_code, "hwid": "android-id-1234567890abcdef",
+                "name": "Pixel", "model": "Pixel 8", "app_version": "1.0.0"})
+            check("приложение привязалось",
+                  r.status_code == 200 and r.json()["config"].startswith("vless://"), r.text[:150])
+            client_token = r.json()["token"]
+            client_device = r.json()["device_id"]
+            capp = {"Authorization": f"Bearer {client_token}", "X-HWID": "android-id-1234567890abcdef"}
+
+            r = await c.post("/api/client/bind", json={
+                "code": bind_code, "hwid": "android-id-1234567890abcdef"})
+            check("код одноразовый", r.status_code == 400, r.text[:100])
+
+            r = await c.get("/api/client/state", headers=capp)
+            check("клиент видит подписку", r.status_code == 200 and r.json()["active"], r.text[:120])
+
+            r = await c.get("/api/client/config", headers={
+                "Authorization": f"Bearer {client_token}", "X-HWID": "other-device-0000000000"})
+            check("чужой HWID с тем же токеном отклонён", r.status_code == 401, r.text[:120])
+
+            r = await c.get("/api/client/config", headers={
+                "Authorization": "Bearer forged-token-0000", "X-HWID": "android-id-1234567890abcdef"})
+            check("поддельный токен отклонён", r.status_code == 401)
+
+            r = await c.get("/api/state", headers=auth)
+            bound = [d for d in r.json()["devices"] if d["hwid_bound"]]
+            check("мини-апп показывает привязку", len(bound) == 1 and "…" in bound[0]["hwid"],
+                  str(bound)[:120])
+            check("цена отвязки по умолчанию 50₽", r.json()["unbind_price_rub"] == 50.0)
+
+            # --- платная отвязка ---
+            _cfg.lzt_token, _cfg.lzt_user_id, _cfg.lzt_username = "test", 1, "targetvpn"
+            r = await c.post("/api/unbind", headers=auth,
+                             json={"device_id": client_device, "method": "lzt"})
+            check("счёт на отвязку создан",
+                  r.status_code == 200 and r.json()["amount_rub"] == 50.0, r.text[:150])
+            unbind_payment = r.json()
+
+            r = await c.get("/api/client/state", headers=capp)
+            check("до оплаты привязка держится", r.status_code == 200)
+
+            _billing.lzt_fetch_incoming = lambda limit=50: _as_coro(
+                [{"data": {"comment": unbind_payment["comment"]},
+                  "incoming_sum": unbind_payment["amount_native"]}])
+            async with _Session() as s2:
+                check("оплата отвязки проведена", await _billing.lzt_check_pending(s2) == 1)
+            _cfg.lzt_token, _cfg.lzt_user_id = "", 0
+
+            r = await c.get("/api/client/state", headers=capp)
+            check("после оплаты старый токен мёртв", r.status_code == 401, r.text[:120])
+
+            r = await c.post("/api/bind-code", headers=auth)
+            r = await c.post("/api/client/bind", json={
+                "code": r.json()["code"], "hwid": "new-phone-abcdef1234567890", "name": "iPhone"})
+            check("новое устройство привязалось после оплаты", r.status_code == 200, r.text[:150])
+            new_token = r.json()["token"]
+
+            # --- админ: цена и бесплатная отвязка ---
+            r = await c.post("/api/admin/settings", headers=oauth, json={"unbind_price_rub": 75})
+            check("админ меняет цену отвязки", r.json()["unbind_price_rub"] == "75.0", r.text[:120])
+            r = await c.get("/api/state", headers=auth)
+            check("новая цена видна в мини-аппе", r.json()["unbind_price_rub"] == 75.0)
+            await c.post("/api/admin/settings", headers=oauth, json={"unbind_price_rub": 50})
+
+            r = await c.get(f"/api/admin/devices/555001", headers=oauth)
+            check("админ видит привязки", any(d["hwid_bound"] for d in r.json()), r.text[:150])
+            bound_id = [d["id"] for d in r.json() if d["hwid_bound"]][0]
+
+            r = await c.post("/api/admin/unbind", headers=oauth, json={"device_id": bound_id})
+            check("админ отвязывает бесплатно", r.status_code == 200)
+            r = await c.get("/api/client/state", headers={
+                "Authorization": f"Bearer {new_token}", "X-HWID": "new-phone-abcdef1234567890"})
+            check("после админской отвязки токен мёртв", r.status_code == 401)
+
+            r = await c.post("/api/admin/settings", headers=auth, json={"apk_url": "http://x"})
+            check("настройки закрыты от обычных юзеров", r.status_code == 403)
+
             # --- запуск без ноды: ничего не продаём ---
             r = await c.get("/api/admin/nodes", headers=oauth)
             for node in r.json():

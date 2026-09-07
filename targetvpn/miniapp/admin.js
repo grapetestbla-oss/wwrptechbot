@@ -9,6 +9,7 @@ async function renderAdmin(tab) {
     if (tab === 'users') return adminUsers(body);
     if (tab === 'nodes') return adminNodes(body);
     if (tab === 'promos') return adminPromos(body);
+    if (tab === 'settings') return adminSettings(body);
     if (tab === 'logs') return adminLogs(body);
   } catch (err) {
     body.innerHTML = `<div class="empty">${esc(err.message)}</div>`;
@@ -225,10 +226,33 @@ async function userSheet(user) {
         <input class="input" id="g-reason" value="${esc(user.ban_reason || '')}" placeholder="Например: абуз" /></div>
       <button class="btn ${user.is_banned ? 'btn-ghost' : 'btn-danger'} wide" id="g-ban">
         ${user.is_banned ? '✅ Разблокировать' : '🚫 Заблокировать'}</button>
+      <div id="u-devices" class="stack"></div>
       ${isOwner && user.role !== 'owner' ? `
         <button class="btn btn-ghost wide" id="g-role">
           ${user.role === 'admin' ? '👤 Снять права админа' : '🛠 Назначить админом'}</button>` : ''}
     </div>`);
+
+  api(`/api/admin/devices/${user.tg_id}`).then((devices) => {
+    const box = document.querySelector('#u-devices');
+    if (!box) return;
+    const bound = devices.filter((d) => d.hwid_bound);
+    if (!bound.length) return;
+    box.innerHTML = `<label class="muted" style="font-size:12px">Привязки приложения</label>` +
+      bound.map((d) => `
+        <div class="list-row">
+          <div class="grow"><b>${esc(d.name)}</b>
+            <small>${esc(d.hwid)}${d.model ? ' · ' + esc(d.model) : ''} · отвязок: ${d.unbind_count}</small></div>
+          <button class="btn btn-sm btn-ghost" data-free="${d.id}">🔓 Отвязать</button>
+        </div>`).join('');
+    box.querySelectorAll('[data-free]').forEach((btn) => btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await api('/api/admin/unbind', { method: 'POST', body: { device_id: Number(btn.dataset.free) } });
+        toast('Устройство отвязано');
+        closeSheet();
+      } catch (err) { toast(err.message); btn.disabled = false; }
+    }));
+  }).catch(() => {});
 
   const run = async (btn, fn) => {
     btn.disabled = true;
@@ -438,5 +462,46 @@ function nodeForm(node) {
       closeSheet();
       renderAdmin('nodes');
     } catch (err) { toast(err.message); }
+  });
+}
+
+
+/* --- Настройки сервиса --- */
+
+async function adminSettings(body) {
+  const cfg = await api('/api/admin/settings');
+  body.innerHTML = `
+    <div class="card">
+      <h3 style="margin:0 0 10px;font-size:15px">📱 Приложение и привязка HWID</h3>
+      <div class="stack">
+        <div class="field"><label>Цена отвязки устройства, ₽</label>
+          <input class="input" id="st-unbind" type="number" min="0" step="1"
+            value="${Number(cfg.unbind_price_rub)}" /></div>
+        <div class="field"><label>Ссылка на APK</label>
+          <input class="input" id="st-apk" value="${esc(cfg.apk_url)}"
+            placeholder="https://.../targetvpn.apk" /></div>
+        <div class="field"><label>Версия APK</label>
+          <input class="input" id="st-ver" value="${esc(cfg.apk_version)}" placeholder="1.0.0" /></div>
+        <div class="field"><label>Срок жизни кода привязки, минут</label>
+          <input class="input" id="st-ttl" type="number" min="1" max="120"
+            value="${Number(cfg.bind_code_ttl_min)}" /></div>
+        <button class="btn btn-primary wide" id="st-save">Сохранить</button>
+      </div>
+    </div>
+    <p class="muted" style="font-size:12px">
+      Отвязать устройство бесплатно можно в карточке пользователя на вкладке «Юзеры».</p>`;
+
+  document.querySelector('#st-save').addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    try {
+      await api('/api/admin/settings', { method: 'POST', body: {
+        unbind_price_rub: Number(document.querySelector('#st-unbind').value),
+        apk_url: document.querySelector('#st-apk').value.trim(),
+        apk_version: document.querySelector('#st-ver').value.trim(),
+        bind_code_ttl_min: Number(document.querySelector('#st-ttl').value),
+      }});
+      toast('Настройки сохранены');
+    } catch (err) { toast(err.message); }
+    e.currentTarget.disabled = false;
   });
 }
