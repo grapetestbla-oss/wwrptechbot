@@ -6,8 +6,9 @@ After=network-online.target
 Type=simple
 User=targetvpn
 WorkingDirectory=/opt/targetvpn
+Environment=API_PORT=8080
 EnvironmentFile=/opt/targetvpn/.env
-ExecStart=/opt/targetvpn/.venv/bin/uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+ExecStart=/opt/targetvpn/.venv/bin/uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port ${API_PORT}
 Restart=always
 RestartSec=5
 

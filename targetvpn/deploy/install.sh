@@ -24,11 +24,15 @@ BOT_TOKEN=${TVPN_BOT_TOKEN:-}
 OWNER_ID=${TVPN_OWNER_ID:-7824168810}
 SUPPORT_URL=${TVPN_SUPPORT_URL:-}
 WANT_TLS=${TVPN_TLS:-Y}
+# 8000 занимает панель Marzban, если нода стоит на этом же сервере.
+API_PORT=${TVPN_API_PORT:-8080}
 
 REUSE=0
 if [[ -f "$APP_DIR/.env" ]]; then
   REUSE=1
   DOMAIN=$(sed -n 's#^PUBLIC_BASE_URL=https\?://##p' "$APP_DIR/.env" | tr -d '\r')
+  SAVED_PORT=$(sed -n 's/^API_PORT=//p' "$APP_DIR/.env" | tr -d '\r')
+  API_PORT=${SAVED_PORT:-$API_PORT}
   say "Найден $APP_DIR/.env — обновляем установку ($DOMAIN), настройки не трогаем"
 fi
 
@@ -104,7 +108,8 @@ SUPPORT_URL=${SUPPORT_URL}
 OWNER_ID=${OWNER_ID}
 
 DATABASE_URL=sqlite+aiosqlite:///${APP_DIR}/data/targetvpn.db
-API_BASE_URL=http://127.0.0.1:8000
+API_PORT=${API_PORT}
+API_BASE_URL=http://127.0.0.1:${API_PORT}
 PUBLIC_BASE_URL=https://${DOMAIN}
 INTERNAL_SECRET=$(openssl rand -hex 32)
 JWT_SECRET=$(openssl rand -hex 32)
@@ -115,7 +120,7 @@ MARZBAN_URL=
 MARZBAN_USERNAME=
 MARZBAN_PASSWORD=
 MARZBAN_VERIFY_SSL=true
-MARZBAN_INBOUNDS={"vless": ["VLESS TCP REALITY"]}
+MARZBAN_INBOUNDS='{"vless": ["VLESS TCP REALITY"]}'
 MARZBAN_PREFIX=tv
 DEMO_MODE=false
 
@@ -137,6 +142,25 @@ mkdir -p "$APP_DIR/data"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 chmod 600 "$APP_DIR/.env"
 
+# --- 5.1 Порт API в .env и в веб-сервере ----------------------------------
+# Выполняется и при обновлении: если раньше API стоял на 8000, который затем
+# занял Marzban, здесь это чинится без ручного вмешательства.
+say "Проверяем порт API (${API_PORT})"
+if grep -q '^API_PORT=' .env; then
+  sed -i "s|^API_PORT=.*|API_PORT=${API_PORT}|" .env
+else
+  sed -i "1i API_PORT=${API_PORT}" .env
+fi
+sed -i "s|^API_BASE_URL=.*|API_BASE_URL=http://127.0.0.1:${API_PORT}|" .env
+# systemd читает .env как список переменных: значение с пробелами обязано быть в кавычках.
+sed -i "s|^MARZBAN_INBOUNDS=\({.*}\)$|MARZBAN_INBOUNDS='\1'|" .env
+
+for conf in /etc/nginx/sites-available/targetvpn /etc/caddy/conf.d/targetvpn.caddy; do
+  if [[ -f "$conf" ]]; then
+    sed -i -E "s|(127\.0\.0\.1):[0-9]+|\1:${API_PORT}|g" "$conf"
+  fi
+done
+
 # --- 6. systemd -----------------------------------------------------------
 say "Регистрируем сервисы systemd"
 install -m 644 deploy/targetvpn-api.service /etc/systemd/system/
@@ -147,7 +171,9 @@ systemctl restart targetvpn-api targetvpn-bot
 
 # --- 7. Веб-сервер --------------------------------------------------------
 if [[ $REUSE -eq 1 ]]; then
-  say "Веб-сервер уже настроен — пропускаем"
+  say "Веб-сервер уже настроен — только перечитываем конфиг"
+  systemctl reload caddy 2>/dev/null || true
+  nginx -t >/dev/null 2>&1 && systemctl reload nginx 2>/dev/null || true
 elif [[ "$WEB" == "caddy" ]]; then
   say "Добавляем сайт в Caddy (сертификат он выпустит сам)"
   cp /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.bak.$(date +%s)" 2>/dev/null || true
@@ -155,7 +181,7 @@ elif [[ "$WEB" == "caddy" ]]; then
   cat > /etc/caddy/conf.d/targetvpn.caddy <<EOF
 ${DOMAIN} {
     encode zstd gzip
-    reverse_proxy 127.0.0.1:8000
+    reverse_proxy 127.0.0.1:${API_PORT}
 }
 EOF
   grep -q 'import conf.d/\*.caddy' /etc/caddy/Caddyfile 2>/dev/null \
@@ -174,7 +200,7 @@ server {
     listen 80;
     server_name ${DOMAIN};
     location / {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://127.0.0.1:${API_PORT};
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -204,6 +230,22 @@ ufw allow 443/tcp >/dev/null 2>&1 || true
 yes | ufw enable  >/dev/null 2>&1 || true
 
 # --- 9. Проверка ----------------------------------------------------------
+say "Проверяем, что API отвечает на 127.0.0.1:${API_PORT}"
+API_OK=0
+for _ in $(seq 1 15); do
+  if curl -fsS --max-time 3 "http://127.0.0.1:${API_PORT}/health" >/dev/null 2>&1; then
+    API_OK=1
+    break
+  fi
+  sleep 2
+done
+if [[ $API_OK -eq 1 ]]; then
+  echo "API отвечает"
+else
+  warn "API не отвечает. Смотрите: journalctl -u targetvpn-api -n 50 --no-pager"
+  systemctl status targetvpn-api --no-pager -l | tail -12 || true
+fi
+
 say "Проверяем конфигурацию"
 sleep 3
 sudo -u "$APP_USER" "$APP_DIR/.venv/bin/python" "$APP_DIR/scripts/check_config.py" || true
