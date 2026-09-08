@@ -161,6 +161,14 @@ for conf in /etc/nginx/sites-available/targetvpn /etc/caddy/conf.d/targetvpn.cad
   fi
 done
 
+# --- 5.2 Конфигурация читается? -------------------------------------------
+# Ошибку в .env ловим здесь, иначе она всплывёт как 502 от веб-сервера.
+say "Проверяем, что .env читается"
+sudo -u "$APP_USER" env -C "$APP_DIR" "$APP_DIR/.venv/bin/python" -c \
+  "import sys; sys.path.insert(0, 'backend'); from app.config import settings; \
+print('домен:', settings.public_base_url)" \
+  || die "конфигурация в $APP_DIR/.env не читается (сообщение выше)"
+
 # --- 6. systemd -----------------------------------------------------------
 say "Регистрируем сервисы systemd"
 install -m 644 deploy/targetvpn-api.service /etc/systemd/system/

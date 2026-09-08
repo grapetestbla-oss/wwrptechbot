@@ -1,7 +1,7 @@
 import json
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -65,6 +65,19 @@ class Settings(BaseSettings):
     trial_enabled: bool = Field(default=True, alias="TRIAL_ENABLED")
     referral_bonus_days: int = Field(default=7, alias="REFERRAL_BONUS_DAYS")
     cors_origins_raw: str = Field(default="*", alias="CORS_ORIGINS")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _ignore_empty(cls, data):
+        """Пустое значение в .env (LZT_USER_ID=) означает «не задано».
+
+        Без этого числовые и логические поля роняли запуск сервиса, потому что
+        пустая строка не парсится ни в int, ни в bool.
+        """
+        if isinstance(data, dict):
+            return {k: v for k, v in data.items()
+                    if not (isinstance(v, str) and not v.strip())}
+        return data
 
     @property
     def cors_origins(self) -> list[str]:

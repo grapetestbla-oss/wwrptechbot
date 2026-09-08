@@ -71,6 +71,13 @@ def check_env_parsing() -> None:
          "MARZBAN_INBOUNDS='{\"vless\": [\"Y\"]}'\n",
          ["https://a.tld", "https://b.tld"], {"vless": ["Y"]}),
         ("CORS_ORIGINS=*\n", ["*"], {"vless": ["VLESS TCP REALITY"]}),
+        # Ровно то, что пишет установщик: часть значений пустая.
+        ("CORS_ORIGINS=https://a.tld\n"
+         "MARZBAN_URL=\nMARZBAN_USERNAME=\nMARZBAN_PASSWORD=\n"
+         "MARZBAN_INBOUNDS='{\"vless\": [\"VLESS TCP REALITY\"]}'\n"
+         "CRYPTOBOT_TOKEN=\nLZT_TOKEN=\nLZT_USER_ID=\nLZT_USERNAME=\n"
+         "RUB_PER_USDT=100\nTRIAL_ENABLED=true\nDEMO_MODE=false\n",
+         ["https://a.tld"], {"vless": ["VLESS TCP REALITY"]}),
     ]
     for body, origins, inbounds in cases:
         with tempfile.NamedTemporaryFile("w", suffix=".env", delete=False) as handle:
