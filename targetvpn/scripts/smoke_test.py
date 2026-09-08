@@ -199,6 +199,20 @@ async def main() -> None:
             r = await c.post("/api/admin/promos", headers=oauth,
                              json={"code": "target25", "discount_percent": 25, "bonus_days": 3})
             check("создание промокода", r.status_code == 200)
+            r = await c.post("/api/admin/promos", headers=oauth, json={
+                "code": "expired", "discount_percent": 50, "expires_in_days": 0})
+            r = await c.get("/api/admin/promos", headers=oauth)
+            check("промокоды перечисляются со сроком",
+                  any(p["code"] == "TARGET25" and p["expires_at"] is None for p in r.json()),
+                  r.text[:150])
+
+            r = await c.post("/api/admin/promos", headers=oauth, json={
+                "code": "week", "discount_percent": 10, "expires_in_days": 7})
+            r = await c.get("/api/admin/promos", headers=oauth)
+            week = [p for p in r.json() if p["code"] == "WEEK"][0]
+            check("срок действия промокода сохраняется", week["expires_at"] is not None,
+                  str(week))
+
             r = await c.post("/api/promo/check", headers=auth,
                              json={"code": "TARGET25", "plan_id": new_plan_id})
             check("промокод даёт скидку", abs(r.json()["price_rub"] - 59.25) < 0.01, r.text)
@@ -409,6 +423,45 @@ async def main() -> None:
 
             r = await c.post("/api/admin/settings", headers=auth, json={"apk_url": "http://x"})
             check("настройки закрыты от обычных юзеров", r.status_code == 403)
+
+            # --- баланс: начисление админом и оплата с него ---
+            r = await c.post("/api/admin/balance", headers=oauth,
+                             json={"tg_id": 555001, "amount": 300, "reason": "бонус"})
+            check("админ начисляет баланс", r.json()["balance_rub"] == 300.0, r.text[:120])
+
+            r = await c.get("/api/state", headers=auth)
+            check("баланс виден пользователю", r.json()["user"]["balance_rub"] == 300.0)
+            check("способ оплаты с баланса появился",
+                  "balance" in r.json()["payment_methods"], str(r.json()["payment_methods"]))
+
+            r = await c.post("/api/purchase", headers=auth,
+                             json={"plan_id": new_plan_id, "method": "balance"})
+            check("оплата тарифа с баланса",
+                  r.status_code == 200 and r.json()["activated"], r.text[:150])
+            r = await c.get("/api/state", headers=auth)
+            check("баланс уменьшился на цену тарифа",
+                  r.json()["user"]["balance_rub"] == 221.0, str(r.json()["user"]["balance_rub"]))
+
+            r = await c.post("/api/admin/balance", headers=oauth,
+                             json={"tg_id": 555001, "amount": -1000})
+            check("баланс не уходит в минус", r.json()["balance_rub"] == 0.0, r.text[:120])
+
+            r = await c.post("/api/purchase", headers=auth,
+                             json={"plan_id": new_plan_id, "method": "balance"})
+            check("без денег оплата с баланса отклонена", r.status_code == 400, r.text[:120])
+
+            r = await c.post("/api/admin/balance", headers=auth, json={"tg_id": 555001, "amount": 5})
+            check("баланс меняет только админ", r.status_code == 403)
+
+            # --- страница подключения ---
+            r = await c.get("/api/state", headers=auth)
+            connect_token = r.json()["sub_url"].rsplit("/", 1)[-1]
+            r = await c.get(f"/connect/{connect_token}")
+            check("страница подключения открывается",
+                  r.status_code == 200 and "happ://add/" in r.text, r.text[:120])
+            check("на странице есть ссылка-подписка", "/sub/" in r.text)
+            r = await c.get("/connect/неизвестный-токен")
+            check("чужой токен на странице подключения отклонён", r.status_code == 404)
 
             # --- кнопки скачивания под три платформы ---
             r = await c.get("/api/state", headers=auth)

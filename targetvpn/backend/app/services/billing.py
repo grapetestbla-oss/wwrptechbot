@@ -247,6 +247,34 @@ async def lzt_check_pending(session: AsyncSession) -> int:
     return activated
 
 
+async def pay_from_balance(session: AsyncSession, user: User, amount: float,
+                            title: str) -> Payment:
+    """Списывает сумму с баланса. Платёж сразу помечается оплаченным."""
+    if user.balance_rub + 1e-6 < amount:
+        raise BillingError(f"Не хватает {amount - user.balance_rub:.0f} ₽ на балансе")
+    user.balance_rub = round(user.balance_rub - amount, 2)
+    payment = Payment(user_id=user.id, provider="balance", amount_rub=amount,
+                      amount_native=amount, currency="RUB", payload=json.dumps({"title": title}))
+    session.add(payment)
+    await session.flush()
+    return payment
+
+
+async def top_up_balance(session: AsyncSession, user: User, amount: float,
+                         reason: str = "") -> float:
+    """Начисление баланса администратором (или возврат средств)."""
+    user.balance_rub = round(user.balance_rub + amount, 2)
+    if user.balance_rub < 0:
+        user.balance_rub = 0.0
+    await session.flush()
+    await notify(session, user.tg_id,
+                 (f"💰 Баланс пополнен на {amount:.0f} ₽." if amount > 0
+                  else f"💰 С баланса списано {abs(amount):.0f} ₽.")
+                 + (f"\n{reason}" if reason else "")
+                 + f"\nТекущий баланс: {user.balance_rub:.0f} ₽.")
+    return user.balance_rub
+
+
 async def start_unbind_payment(session: AsyncSession, user: User, device: Device,
                                method: str) -> tuple[Payment, str]:
     """Счёт на отвязку HWID. Возвращает платёж и ссылку (или invoice link звёзд)."""

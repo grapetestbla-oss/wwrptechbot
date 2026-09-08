@@ -184,7 +184,7 @@ async function adminUsers(body, query = '') {
       <div class="list-row">
         <div class="grow">
           <b>${esc(u.first_name || 'Без имени')} ${u.username ? '@' + esc(u.username) : ''}</b>
-          <small>ID ${u.tg_id} · ${u.plan_title
+          <small>ID ${u.tg_id} · ${Math.round(u.balance_rub || 0)} ₽ · ${u.plan_title
             ? esc(u.plan_title) + ' до ' + fmtDate(u.expires_at) : 'без подписки'} · устройств: ${u.devices}</small>
         </div>
         ${u.is_banned ? '<span class="badge bad">бан</span>' : ''}
@@ -206,7 +206,8 @@ async function userSheet(user) {
     <div class="sheet-title">${esc(user.first_name || 'Пользователь')} · ${user.tg_id}</div>
     <p class="muted" style="margin-top:-8px;font-size:13px">
       ${user.plan_title ? `Тариф «${esc(user.plan_title)}» до ${fmtDate(user.expires_at)}` : 'Подписки нет'} ·
-      Пробный ${user.trial_used ? 'использован' : 'доступен'}</p>
+      Пробный ${user.trial_used ? 'использован' : 'доступен'} ·
+      Баланс ${Math.round(user.balance_rub || 0)} ₽</p>
     <div class="stack">
       <div class="field"><label>Выдать тариф</label>
         <select class="input" id="g-plan">
@@ -221,6 +222,13 @@ async function userSheet(user) {
           <input class="input" id="g-dev" type="number" min="1" max="20" placeholder="3" /></div>
       </div>
       <button class="btn btn-primary wide" id="g-grant">🎁 Выдать / продлить</button>
+      <div class="grid-2">
+        <div class="field"><label>Изменить баланс, ₽</label>
+          <input class="input" id="g-balance" type="number" step="1" placeholder="+100" /></div>
+        <div class="field"><label>Комментарий</label>
+          <input class="input" id="g-balance-reason" placeholder="бонус" /></div>
+      </div>
+      <button class="btn btn-ghost wide" id="g-topup">💰 Начислить / списать баланс</button>
       <button class="btn btn-ghost wide" id="g-revoke">⛔️ Отозвать подписку</button>
       <div class="field"><label>Причина блокировки</label>
         <input class="input" id="g-reason" value="${esc(user.ban_reason || '')}" placeholder="Например: абуз" /></div>
@@ -274,6 +282,16 @@ async function userSheet(user) {
     toast('Подписка выдана');
   }));
 
+  document.querySelector('#g-topup').addEventListener('click', (e) => run(e.currentTarget, async () => {
+    const amount = Number(document.querySelector('#g-balance').value);
+    if (!amount) throw new Error('Укажите сумму: положительную для начисления, отрицательную для списания');
+    const res = await api('/api/admin/balance', { method: 'POST', body: {
+      tg_id: user.tg_id, amount,
+      reason: document.querySelector('#g-balance-reason').value.trim(),
+    }});
+    toast(`Баланс: ${Math.round(res.balance_rub)} ₽`);
+  }));
+
   document.querySelector('#g-revoke').addEventListener('click', (e) => run(e.currentTarget, async () => {
     await api('/api/admin/revoke', { method: 'POST', body: { tg_id: user.tg_id } });
     toast('Подписка отозвана');
@@ -305,7 +323,8 @@ async function adminPromos(body) {
       <div class="list-row">
         <div class="grow"><b>${esc(p.code)}</b>
           <small>−${p.discount_percent}% ${p.bonus_days ? '· +' + p.bonus_days + ' дн.' : ''}
-            · использован ${p.used_count}${p.max_uses ? ' из ' + p.max_uses : ''}</small></div>
+            · использован ${p.used_count}${p.max_uses ? ' из ' + p.max_uses : ''}
+            ${p.expires_at ? '· до ' + fmtDate(p.expires_at) : '· бессрочный'}</small></div>
         <span class="badge ${p.is_active ? 'ok' : 'bad'}">${p.is_active ? 'вкл' : 'выкл'}</span>
         <button class="btn btn-sm btn-danger" data-del="${p.id}">🗑</button>
       </div>`).join('') : '<div class="empty">Промокодов нет</div>'}`;
@@ -322,8 +341,12 @@ async function adminPromos(body) {
           <div class="field"><label>Бонусных дней</label>
             <input class="input" id="pr-days" type="number" min="0" value="0" /></div>
         </div>
-        <div class="field"><label>Лимит применений (0 — без лимита)</label>
-          <input class="input" id="pr-max" type="number" min="0" value="0" /></div>
+        <div class="grid-2">
+          <div class="field"><label>Лимит применений (0 — без лимита)</label>
+            <input class="input" id="pr-max" type="number" min="0" value="0" /></div>
+          <div class="field"><label>Срок, дней (0 — бессрочно)</label>
+            <input class="input" id="pr-days-valid" type="number" min="0" value="0" /></div>
+        </div>
         <button class="btn btn-primary wide" id="pr-save">Создать</button>
       </div>`);
     document.querySelector('#pr-save').addEventListener('click', async (e) => {
@@ -336,6 +359,7 @@ async function adminPromos(body) {
           discount_percent: Number(document.querySelector('#pr-disc').value),
           bonus_days: Number(document.querySelector('#pr-days').value),
           max_uses: Number(document.querySelector('#pr-max').value),
+          expires_in_days: Number(document.querySelector('#pr-days-valid').value),
           is_active: true,
         }});
         closeSheet();

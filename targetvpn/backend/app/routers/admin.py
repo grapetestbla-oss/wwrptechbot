@@ -12,10 +12,12 @@ from ..marzban import MarzbanError, client_for, marzban
 from ..models import (AdminLog, Device, Node, Notification, Payment,
                       PaymentStatus, Plan, PromoCode, Role, Subscription, User,
                       utcnow)
-from ..schemas import (AdminUserOut, BanRequest, BroadcastRequest, GrantRequest,
+from ..schemas import (AdminUserOut, BalanceRequest, BanRequest, BroadcastRequest,
+                       GrantRequest,
                        NodeAdminOut, NodeUpsert, PlanOut, PlanUpsert, PromoUpsert,
                        RoleRequest, SettingsUpsert, StatsOut, UnbindRequest)
 from ..security import current_admin, current_owner
+from ..services import billing
 from ..services import hwid as hwid_service
 from ..services import settings_store, subs
 from .api import plan_out
@@ -134,7 +136,7 @@ async def list_users(q: str = Query(default=""), limit: int = 50, offset: int = 
         result.append(AdminUserOut(
             tg_id=user.tg_id, username=user.username, first_name=user.first_name,
             role=user.role.value, is_banned=user.is_banned, ban_reason=user.ban_reason,
-            trial_used=user.trial_used, devices=devices,
+            trial_used=user.trial_used, devices=devices, balance_rub=user.balance_rub,
             plan_title=sub.plan_title if sub else None,
             expires_at=sub.expires_at if sub else None, created_at=user.created_at))
     return result
@@ -179,6 +181,20 @@ async def revoke(payload: GrantRequest, admin: User = Depends(current_admin),
     await subs.log_admin(session, admin.tg_id, "revoke", str(user.tg_id))
     await session.commit()
     return {"ok": True}
+
+
+@router.post("/balance")
+async def change_balance(payload: BalanceRequest, admin: User = Depends(current_admin),
+                         session: AsyncSession = Depends(get_session)):
+    """Начисление или списание баланса. Баланс тратится на тарифы и отвязки."""
+    user = await _get_user(session, payload.tg_id)
+    if payload.amount == 0:
+        raise HTTPException(400, "Сумма не может быть нулевой")
+    balance = await billing.top_up_balance(session, user, payload.amount, payload.reason)
+    await subs.log_admin(session, admin.tg_id, "balance", str(user.tg_id),
+                         f"{payload.amount:+.0f} ₽ -> {balance:.0f} ₽ {payload.reason}".strip())
+    await session.commit()
+    return {"ok": True, "balance_rub": balance}
 
 
 @router.post("/ban")
@@ -241,7 +257,8 @@ async def list_promos(admin: User = Depends(current_admin),
     rows = (await session.execute(select(PromoCode).order_by(PromoCode.id.desc()))).scalars().all()
     return [{"id": p.id, "code": p.code, "discount_percent": p.discount_percent,
              "bonus_days": p.bonus_days, "max_uses": p.max_uses, "used_count": p.used_count,
-             "is_active": p.is_active} for p in rows]
+             "is_active": p.is_active,
+             "expires_at": p.expires_at.isoformat() if p.expires_at else None} for p in rows]
 
 
 @router.post("/promos")
@@ -257,6 +274,8 @@ async def upsert_promo(payload: PromoUpsert, admin: User = Depends(current_admin
     promo.bonus_days = max(0, payload.bonus_days)
     promo.max_uses = max(0, payload.max_uses)
     promo.is_active = payload.is_active
+    promo.expires_at = (utcnow() + timedelta(days=payload.expires_in_days)
+                        if payload.expires_in_days > 0 else None)
     await subs.log_admin(session, admin.tg_id, "promo", code)
     await session.commit()
     return {"ok": True, "id": promo.id}

@@ -308,6 +308,7 @@ async function checkPromo() {
 /* ---------- Оплата ---------- */
 
 const PAY_LABELS = {
+  balance: '💰 С баланса',
   stars: '⭐️ Telegram Stars',
   cryptobot: '💎 Криптой (USDT/TON)',
   lzt: '🐝 Переводом на LZT Market',
@@ -512,7 +513,7 @@ function openDeviceSheet(deviceId) {
     <div class="key-box" id="key-box">${esc(link) || 'Ключ выдаётся…'}</div>
     <div class="stack" style="margin-top:12px">
       <button class="btn btn-primary wide" data-act="copy">📋 Скопировать ключ</button>
-      <button class="btn btn-ghost wide" data-act="import">📲 Открыть в клиенте</button>
+      <button class="btn btn-ghost wide" data-act="import">📲 Подключить в приложении</button>
       <button class="btn btn-ghost wide" data-act="region">🌍 Сменить локацию</button>
       <div class="row">
         <button class="btn btn-ghost btn-sm" data-act="refresh">♻️ Перевыпустить</button>
@@ -524,8 +525,10 @@ function openDeviceSheet(deviceId) {
     const act = btn.dataset.act;
     if (act === 'copy') return copy(link, 'Ключ скопирован');
     if (act === 'import') {
-      // Универсальный импорт: клиенты перехватывают схему vless://
-      window.location.href = link;
+      // Внутри Telegram схема vless:// не открывается, поэтому уводим в браузер:
+      // страница подключения уже передаёт ключ в выбранный клиент.
+      const url = `${state.subUrl.replace('/sub/', '/connect/')}?device=${device.id}`;
+      tg?.openLink?.(url, { try_instant_view: false }) || window.open(url, '_blank');
       return;
     }
     if (act === 'refresh') {
@@ -714,6 +717,10 @@ function renderProfile() {
         <div class="grow"><b>${esc(u.first_name || 'Пользователь')}</b>
           <small>${u.username ? '@' + esc(u.username) : 'ID ' + u.tg_id}</small></div>
         ${u.role !== 'user' ? `<span class="badge hot">${u.role === 'owner' ? 'Владелец' : 'Админ'}</span>` : ''}
+      </div>
+      <div class="list-row" style="margin-top:12px">
+        <div class="grow"><b>Баланс</b><small>Тратится на тарифы и отвязку устройств</small></div>
+        <span class="badge ${u.balance_rub > 0 ? 'ok' : ''}">${Math.round(u.balance_rub)} ₽</span>
       </div>
     </div>
     <div class="card">

@@ -124,18 +124,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Совместимого клиента нет — предлагаем выбор, а не уводим в магазин молча. */
+    /** Совместимого клиента нет — открываем страницу подключения со списком приложений. */
     private fun showNoClientDialog(key: String) {
         AlertDialog.Builder(this)
             .setTitle(R.string.no_client_title)
             .setMessage(R.string.no_client_message)
-            .setPositiveButton(R.string.copy_key) { _, _ ->
+            .setPositiveButton(R.string.open_connect_page) { _, _ ->
                 copyToClipboard(key)
+                openLink("${BuildConfig.API_BASE}/connect/${storage.subToken.orEmpty()}")
             }
-            .setNeutralButton(R.string.install_v2rayng) { _, _ ->
-                copyToClipboard(key)
-                openLink("https://play.google.com/store/apps/details?id=com.v2ray.ang")
-            }
+            .setNeutralButton(R.string.copy_key) { _, _ -> copyToClipboard(key) }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }

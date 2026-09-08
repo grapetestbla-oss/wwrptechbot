@@ -28,8 +28,9 @@
     <string name="no_key">Ключ ещё не выдан</string>
     <string name="install_client">Ключ скопирован. Установите v2rayNG и вставьте его</string>
     <string name="no_client_title">Нет приложения для подключения</string>
-    <string name="no_client_message">TargetVPN передаёт ключ в VPN-клиент. Установите v2rayNG (или Hiddify) — ключ уже будет в буфере обмена, останется вставить его в клиент.</string>
+    <string name="no_client_message">TargetVPN передаёт ключ в VPN-клиент: Happ, v2rayNG или Hiddify. На странице подключения можно выбрать приложение — ключ импортируется автоматически. Он уже скопирован в буфер обмена.</string>
     <string name="install_v2rayng">Установить v2rayNG</string>
+    <string name="open_connect_page">Открыть страницу подключения</string>
     <string name="cancel">Отмена</string>
     <string name="choose_region">Выберите локацию</string>
     <string name="change_region">Сменить локацию</string>

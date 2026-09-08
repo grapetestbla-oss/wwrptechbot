@@ -26,6 +26,7 @@ class UserOut(BaseModel):
     trial_used: bool = False
     referrals: int = 0
     ref_link: str = ""
+    balance_rub: float = 0.0
 
 
 class PlanOut(BaseModel):
@@ -210,6 +211,7 @@ class AdminUserOut(BaseModel):
     ban_reason: str | None = None
     trial_used: bool
     devices: int
+    balance_rub: float = 0.0
     plan_title: str | None = None
     expires_at: datetime | None = None
     created_at: datetime
@@ -221,6 +223,12 @@ class GrantRequest(BaseModel):
     hours: int | None = None
     devices: int | None = None
     title: str | None = None
+
+
+class BalanceRequest(BaseModel):
+    tg_id: int
+    amount: float
+    reason: str = ""
 
 
 class BanRequest(BaseModel):
@@ -246,6 +254,7 @@ class PromoUpsert(BaseModel):
     bonus_days: int = 0
     max_uses: int = 0
     is_active: bool = True
+    expires_in_days: int = 0  # 0 — бессрочный
 
 
 class StatsOut(BaseModel):

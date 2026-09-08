@@ -53,6 +53,7 @@ class Api(private val context: Context) {
         storage.config = json.getString("config")
         storage.deviceName = json.optString("device_name")
         storage.location = json.optString("location")
+        storage.subToken = json.optString("sub_token")
         State(
             active = true,
             deviceName = json.optString("device_name"),
@@ -117,6 +118,7 @@ class Api(private val context: Context) {
         val config = json.optString("config")
         if (config.isNotEmpty()) storage.config = config
         storage.location = json.optString("location")
+        json.optString("sub_token").takeIf { it.isNotEmpty() }?.let { storage.subToken = it }
         State(
             active = json.optBoolean("active"),
             deviceName = json.optString("device_name"),

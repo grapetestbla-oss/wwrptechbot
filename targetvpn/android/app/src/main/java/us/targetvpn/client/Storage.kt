@@ -23,6 +23,11 @@ class Storage(context: Context) {
         get() = prefs.getString(KEY_LOCATION, "") ?: ""
         set(value) = prefs.edit().putString(KEY_LOCATION, value).apply()
 
+    /** Токен ссылки-подписки: по нему открывается страница подключения. */
+    var subToken: String?
+        get() = prefs.getString(KEY_SUB_TOKEN, null)
+        set(value) = prefs.edit().putString(KEY_SUB_TOKEN, value).apply()
+
     fun clear() = prefs.edit().clear().apply()
 
     val isBound: Boolean get() = !token.isNullOrEmpty()
@@ -32,5 +37,6 @@ class Storage(context: Context) {
         const val KEY_CONFIG = "config"
         const val KEY_NAME = "device_name"
         const val KEY_LOCATION = "location"
+        const val KEY_SUB_TOKEN = "sub_token"
     }
 }

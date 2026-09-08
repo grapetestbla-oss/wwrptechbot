@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..db import get_session
-from ..models import Device, Node, Payment, PaymentStatus, Plan, User, utcnow
+from ..models import (Device, Node, Payment, PaymentKind, PaymentStatus, Plan,
+                      User, utcnow)
 from ..schemas import (AuthRequest, AuthResponse, BindCodeOut, DeviceCreate,
                        DeviceOut, NodeOut, PlanOut, PromoCheck, PurchaseRequest,
                        PurchaseResponse, StateOut, SubscriptionOut, UnbindRequest,
@@ -27,7 +28,7 @@ def user_out(user: User, referrals: int = 0) -> UserOut:
             if settings.bot_username else "")
     return UserOut(tg_id=user.tg_id, username=user.username, first_name=user.first_name,
                    role=user.role.value, is_banned=user.is_banned, trial_used=user.trial_used,
-                   referrals=referrals, ref_link=link)
+                   referrals=referrals, ref_link=link, balance_rub=user.balance_rub)
 
 
 def plan_out(plan: Plan) -> PlanOut:
@@ -49,8 +50,8 @@ async def nodes_ready(session: AsyncSession) -> bool:
     return node is not None
 
 
-def available_payment_methods() -> list[str]:
-    methods = []
+def available_payment_methods(balance: float = 0.0) -> list[str]:
+    methods = ["balance"] if balance > 0 else []
     if settings.bot_token:
         methods.append("stars")
     if settings.cryptobot_token:
@@ -120,7 +121,7 @@ async def state(user: User = Depends(current_user), session: AsyncSession = Depe
         trial_available=bool(settings.trial_enabled and trial_plan and not user.trial_used
                              and sub is None and ready),
         nodes_ready=ready,
-        payment_methods=available_payment_methods(),
+        payment_methods=available_payment_methods(user.balance_rub),
         downloads=await settings_store.downloads(session),
         unbind_price_rub=await settings_store.get_float(session, "unbind_price_rub", 50.0),
     )
@@ -225,6 +226,18 @@ async def unbind(payload: UnbindRequest, user: User = Depends(current_user),
         raise HTTPException(404, "Устройство не найдено")
     if device.hwid is None:
         raise HTTPException(400, "Это устройство не привязано к приложению")
+    if payload.method == "balance":
+        price = await settings_store.get_float(session, "unbind_price_rub", 50.0)
+        try:
+            payment = await billing.pay_from_balance(session, user, price, "Отвязка устройства")
+            payment.kind = PaymentKind.unbind
+            payment.device_id = device.id
+            await billing.complete_payment(session, payment)
+        except billing.BillingError as exc:
+            raise HTTPException(400, str(exc))
+        return PurchaseResponse(payment_id=payment.id, method="balance", amount_rub=price,
+                                amount_native=price, currency="RUB", activated=True)
+
     try:
         payment, url = await billing.start_unbind_payment(session, user, device, payload.method)
     except billing.BillingError as exc:
@@ -301,6 +314,16 @@ async def purchase(payload: PurchaseRequest, user: User = Depends(current_user),
         return PurchaseResponse(payment_id=payment.id, method="cryptobot",
                                 invoice_url=meta.get("url", ""), amount_rub=price,
                                 amount_native=payment.amount_native, currency=payment.currency)
+
+    if payload.method == "balance":
+        try:
+            payment = await billing.pay_from_balance(session, user, price, plan.title)
+            payment.plan_id = plan.id
+            await billing.complete_payment(session, payment)
+        except billing.BillingError as exc:
+            raise HTTPException(400, str(exc))
+        return PurchaseResponse(payment_id=payment.id, method="balance", amount_rub=price,
+                                amount_native=price, currency="RUB", activated=True)
 
     if payload.method == "lzt":
         try:

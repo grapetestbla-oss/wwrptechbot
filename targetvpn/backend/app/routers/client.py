@@ -31,6 +31,7 @@ class BindRequest(BaseModel):
 
 class BindResponse(BaseModel):
     token: str
+    sub_token: str = ""
     device_id: int
     device_name: str
     config: str
@@ -41,6 +42,7 @@ class BindResponse(BaseModel):
 
 class ClientState(BaseModel):
     active: bool
+    sub_token: str = ""
     device_name: str
     location: str = ""
     plan_title: str = ""
@@ -76,7 +78,8 @@ async def bind(payload: BindRequest, session: AsyncSession = Depends(get_session
                       "Если понадобится сменить телефон — отвяжите HWID в мини-аппе.")
     await session.commit()
     return BindResponse(
-        token=device.client_token, device_id=device.id, device_name=device.name,
+        token=device.client_token, sub_token=user.sub_token,
+        device_id=device.id, device_name=device.name,
         config=device.config_url, location=await hwid_service.node_title(session, device),
         expires_at=expires.isoformat(),
         seconds_left=max(0, int((expires - utcnow()).total_seconds())))
@@ -88,11 +91,11 @@ async def state(authorization: str = Header(default=""), x_hwid: str = Header(de
     device, user = await _auth(authorization, x_hwid, session)
     sub = await subs.active_subscription(session, user)
     if sub is None:
-        return ClientState(active=False, device_name=device.name,
+        return ClientState(active=False, device_name=device.name, sub_token=user.sub_token,
                            message="Подписка закончилась. Продлите её в Telegram-боте.")
     expires = subs.aware(sub.expires_at)
     return ClientState(
-        active=device.is_active, device_name=device.name,
+        active=device.is_active, device_name=device.name, sub_token=user.sub_token,
         location=await hwid_service.node_title(session, device),
         plan_title=sub.plan_title, expires_at=expires.isoformat(),
         seconds_left=max(0, int((expires - utcnow()).total_seconds())),
