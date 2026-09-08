@@ -28,8 +28,11 @@
     <string name="notification_connected">Подключено · %1$s</string>
     <string name="tunnel_failed">Не удалось поднять туннель</string>
     <string name="vpn_permission_needed">Разрешите создание VPN-подключения</string>
-    <string name="check_ok">Проверка канала: сервер отвечает</string>
-    <string name="check_failed">Проверка канала не прошла: %1$s</string>
+    <string name="check_server_ok">1. Порт сервера доступен (%1$s)</string>
+    <string name="check_server_failed">1. Сервер недоступен: %1$s</string>
+    <string name="check_ok">2. Канал через ядро работает</string>
+    <string name="check_failed">2. Канал не работает: %1$s</string>
+    <string name="copy_diagnostic">Скопировать диагностику</string>
     <string name="copy_key">Скопировать ключ</string>
     <string name="refresh">Обновить статус</string>
     <string name="key_copied">Ключ скопирован</string>

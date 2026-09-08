@@ -43,6 +43,7 @@ class MainActivity : AppCompatActivity() {
             intent?.getStringExtra(EXTRA_CHECK)?.let {
                 binding.diagnostic.text = it
                 binding.diagnostic.visibility = View.VISIBLE
+                binding.copyDiagnosticButton.visibility = View.VISIBLE
             }
             renderConnection()
         }
@@ -76,6 +77,7 @@ class MainActivity : AppCompatActivity() {
         binding.connectButton.setOnClickListener { connect() }
         binding.copyButton.setOnClickListener { copyKey() }
         binding.refreshButton.setOnClickListener { refresh() }
+        binding.copyDiagnosticButton.setOnClickListener { copyDiagnostic() }
         binding.location.setOnClickListener { chooseRegion() }
         binding.changeRegionButton.setOnClickListener { chooseRegion() }
 
@@ -257,6 +259,19 @@ class MainActivity : AppCompatActivity() {
             return
         }
         copyToClipboard(key)
+    }
+
+    /** Собирает всё, что нужно для разбора проблемы, в один текст. */
+    private fun copyDiagnostic() {
+        val report = buildString {
+            appendLine("TargetVPN ${BuildConfig.VERSION_NAME}")
+            appendLine("Сервер: ${BuildConfig.API_BASE}")
+            appendLine("Устройство: ${Hwid.deviceModel()}, Android ${Build.VERSION.RELEASE}")
+            appendLine("Локация: ${storage.location.ifBlank { "—" }}")
+            appendLine("Туннель: ${if (connected) "включён" else "выключен"}")
+            appendLine(binding.diagnostic.text.toString())
+        }
+        copyToClipboard(report)
     }
 
     private fun copyToClipboard(key: String) {

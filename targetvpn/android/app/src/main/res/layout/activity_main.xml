@@ -171,6 +171,16 @@
                 android:textColor="@color/text" />
 
             <Button
+                android:id="@+id/copyDiagnosticButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:backgroundTint="@color/card_soft"
+                android:text="@string/copy_diagnostic"
+                android:textColor="@color/text"
+                android:visibility="gone" />
+
+            <Button
                 android:id="@+id/refreshButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

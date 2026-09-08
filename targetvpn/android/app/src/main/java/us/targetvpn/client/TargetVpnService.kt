@@ -13,8 +13,10 @@ import android.util.Log
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import targetcore.Targetcore
+import android.net.Uri
 import java.net.InetSocketAddress
 import java.net.Proxy
+import java.net.Socket
 import java.util.concurrent.TimeUnit
 
 /**
@@ -108,7 +110,7 @@ class TargetVpnService : VpnService() {
             Targetcore.start(descriptor.fd.toLong(), config, MTU.toLong())
             tunnel = descriptor
             broadcastState(true, null)
-            runSelfCheck()
+            runSelfCheck(key)
         } catch (error: Exception) {
             Log.e(TAG, "ядро не запустилось", error)
             descriptor.close()
@@ -135,12 +137,13 @@ class TargetVpnService : VpnService() {
     }
 
     /**
-     * Проверка после запуска: запрос идёт в локальный вход ядра, минуя TUN.
-     * Успех означает, что ядро и сервер работают, и если интернета всё равно
-     * нет — дело в маршрутизации на устройстве, а не в подписке.
+     * Диагностика по шагам: сначала доступность самого сервера, потом канал
+     * через ядро. По этим двум строкам сразу видно, где рвётся — на ноде,
+     * в ключе или в маршрутизации устройства.
      */
-    private fun runSelfCheck() {
+    private fun runSelfCheck(key: String) {
         Thread {
+            val serverLine = checkServerReachable(key)
             val client = OkHttpClient.Builder()
                 .proxy(Proxy(Proxy.Type.SOCKS,
                     InetSocketAddress("127.0.0.1", XrayConfig.SOCKS_PORT)))
@@ -163,8 +166,24 @@ class TargetVpnService : VpnService() {
             sendBroadcast(Intent(MainActivity.ACTION_STATE)
                 .setPackage(packageName)
                 .putExtra(MainActivity.EXTRA_CONNECTED, true)
-                .putExtra(MainActivity.EXTRA_CHECK, message))
+                .putExtra(MainActivity.EXTRA_CHECK, "$serverLine\n$message"))
         }.start()
+    }
+
+    /** Обычное TCP-соединение до порта ноды, мимо туннеля. */
+    private fun checkServerReachable(key: String): String {
+        return try {
+            val uri = Uri.parse(key)
+            val host = uri.host ?: return getString(R.string.check_server_failed, "нет адреса")
+            val port = if (uri.port > 0) uri.port else 443
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(host, port), 7000)
+            }
+            getString(R.string.check_server_ok, "$host:$port")
+        } catch (error: Exception) {
+            getString(R.string.check_server_failed,
+                error.message ?: error.javaClass.simpleName)
+        }
     }
 
     private fun stopTunnel() {
