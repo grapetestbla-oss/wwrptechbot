@@ -1,16 +1,21 @@
 package us.targetvpn.client
 
-import android.content.ActivityNotFoundException
+import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
+import android.net.VpnService
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import us.targetvpn.client.databinding.ActivityMainBinding
@@ -21,6 +26,38 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var storage: Storage
     private lateinit var api: Api
+    private var connected = false
+
+    companion object {
+        const val ACTION_STATE = "us.targetvpn.client.STATE"
+        const val EXTRA_CONNECTED = "connected"
+        const val EXTRA_ERROR = "error"
+    }
+
+    /** Сервис сообщает, поднялся туннель или нет. */
+    private val stateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            connected = intent?.getBooleanExtra(EXTRA_CONNECTED, false) ?: false
+            intent?.getStringExtra(EXTRA_ERROR)?.let { toast(it) }
+            renderConnection()
+        }
+    }
+
+    /** Разрешение на VPN запрашивается системой один раз. */
+    private val vpnPermission = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            launchTunnel()
+        } else {
+            toast(getString(R.string.vpn_permission_needed))
+            renderConnection()
+        }
+    }
+
+    private val notificationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* уведомление не обязательно, туннель работает и без него */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,7 +75,27 @@ class MainActivity : AppCompatActivity() {
         binding.changeRegionButton.setOnClickListener { chooseRegion() }
 
         render()
+        connected = TargetVpnService.isRunning()
+        renderConnection()
         if (storage.isBound) refresh()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val filter = IntentFilter(ACTION_STATE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(stateReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(stateReceiver, filter)
+        }
+        connected = TargetVpnService.isRunning()
+        renderConnection()
+    }
+
+    override fun onStop() {
+        runCatching { unregisterReceiver(stateReceiver) }
+        super.onStop()
     }
 
     /** Экран привязки или экран подписки — в зависимости от состояния. */
@@ -57,9 +114,10 @@ class MainActivity : AppCompatActivity() {
 
         if (state == null) return
         if (state.active && state.secondsLeft > 0) {
-            binding.statusTitle.text = getString(R.string.status_active)
+            if (!connected) binding.statusTitle.text = getString(R.string.status_active)
             binding.expires.text = getString(R.string.expires_fmt, humanLeft(state.secondsLeft))
             binding.connectButton.isEnabled = state.config.isNotEmpty() || storage.config != null
+            renderConnection()
         } else {
             binding.statusTitle.text = getString(R.string.status_inactive)
             binding.expires.text = state.message.ifBlank { getString(R.string.subscription_ended) }
@@ -100,42 +158,50 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Запуск подключения. Ключ передаётся установленному VPN-клиенту
-     * (v2rayNG, Hiddify и совместимые) — они понимают ссылку vless://.
-     */
+    /** Включение и выключение собственного туннеля. */
     private fun connect() {
+        if (connected) {
+            TargetVpnService.disconnect(this)
+            connected = false
+            renderConnection()
+            return
+        }
+
+        binding.connectButton.isEnabled = false
+        binding.statusTitle.text = getString(R.string.status_connecting)
         lifecycleScope.launch {
             val key = runCatching { api.config() }.getOrElse { storage.config.orEmpty() }
             if (key.isEmpty()) {
                 toast(getString(R.string.no_key))
+                binding.connectButton.isEnabled = true
                 return@launch
             }
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(key)).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            // resolveActivity на Android 11+ врёт про отсутствие приложения,
-            // поэтому просто пробуем открыть и ловим отказ.
-            try {
-                startActivity(intent)
-            } catch (_: ActivityNotFoundException) {
-                showNoClientDialog(key)
-            }
+            storage.config = key
+
+            // Система показывает своё окно разрешения при первом подключении.
+            val intent = VpnService.prepare(this@MainActivity)
+            if (intent != null) vpnPermission.launch(intent) else launchTunnel()
         }
     }
 
-    /** Совместимого клиента нет — открываем страницу подключения со списком приложений. */
-    private fun showNoClientDialog(key: String) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.no_client_title)
-            .setMessage(R.string.no_client_message)
-            .setPositiveButton(R.string.open_connect_page) { _, _ ->
-                copyToClipboard(key)
-                openLink("${BuildConfig.API_BASE}/connect/${storage.subToken.orEmpty()}")
-            }
-            .setNeutralButton(R.string.copy_key) { _, _ -> copyToClipboard(key) }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+    private fun launchTunnel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS)
+            != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        TargetVpnService.connect(this, storage.config.orEmpty(), storage.location)
+    }
+
+    /** Рисует кнопку и заголовок под текущее состояние туннеля. */
+    private fun renderConnection() {
+        binding.connectButton.isEnabled = true
+        binding.connectButton.text =
+            getString(if (connected) R.string.disconnect else R.string.connect)
+        if (connected) {
+            binding.statusTitle.text = getString(R.string.status_connected)
+        }
     }
 
     /** Выбор локации: список приходит с сервера, ключ перевыпускается на месте. */
@@ -178,13 +244,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun openLink(url: String) {
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        } catch (_: ActivityNotFoundException) {
-            toast(getString(R.string.error_generic))
-        }
-    }
 
     private fun copyKey() {
         val key = storage.config.orEmpty()

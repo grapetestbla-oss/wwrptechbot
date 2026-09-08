@@ -22,6 +22,12 @@
     <string name="left_minutes">%1$d мин.</string>
 
     <string name="connect">Подключиться</string>
+    <string name="disconnect">Отключиться</string>
+    <string name="status_connected">VPN включён</string>
+    <string name="status_connecting">Подключаемся…</string>
+    <string name="notification_connected">Подключено · %1$s</string>
+    <string name="tunnel_failed">Не удалось поднять туннель</string>
+    <string name="vpn_permission_needed">Разрешите создание VPN-подключения</string>
     <string name="copy_key">Скопировать ключ</string>
     <string name="refresh">Обновить статус</string>
     <string name="key_copied">Ключ скопирован</string>

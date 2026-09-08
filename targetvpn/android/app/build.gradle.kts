@@ -11,12 +11,23 @@ android {
         applicationId = "us.targetvpn.client"
         minSdk = 24
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "2.0.0"
 
         // Адрес бэкенда подставляется при сборке: -PapiBase=https://ваш-домен
         buildConfigField("String", "API_BASE",
             "\"${project.findProperty("apiBase") ?: "https://example.com"}\"")
+    }
+
+    // Ядро занимает по 34 МБ на архитектуру. Отдельные APK под каждую
+    // избавляют пользователя от лишней половины.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = false
+        }
     }
 
     buildTypes {
@@ -39,6 +50,8 @@ android {
 }
 
 dependencies {
+    // Ядро туннеля: Xray + tun2socks, собранные gomobile в targetcore.aar.
+    implementation(files("libs/targetcore.aar"))
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
