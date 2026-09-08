@@ -69,13 +69,21 @@ object XrayConfig {
                 .put("enabled", true)
                 .put("destOverride", JSONArray().put("http").put("tls").put("quic")))
 
+        // Локальные адреса мимо туннеля: иначе роутер и принтеры отвалятся.
+        // Список задан явно: правило geoip:private требует файла geoip.dat,
+        // которого в APK нет, и ядро отказывалось читать конфигурацию.
+        val privateRanges = JSONArray()
+        listOf(
+            "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8",
+            "169.254.0.0/16", "224.0.0.0/4", "::1/128", "fc00::/7", "fe80::/10",
+        ).forEach { privateRanges.put(it) }
+
         val routing = JSONObject()
             .put("domainStrategy", "IPIfNonMatch")
             .put("rules", JSONArray()
-                // Локальные адреса мимо туннеля: иначе роутер и принтеры отвалятся.
                 .put(JSONObject()
                     .put("type", "field")
-                    .put("ip", JSONArray().put("geoip:private"))
+                    .put("ip", privateRanges)
                     .put("outboundTag", "direct")))
 
         return JSONObject()
