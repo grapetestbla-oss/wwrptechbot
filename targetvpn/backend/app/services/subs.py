@@ -205,6 +205,33 @@ async def add_device(session: AsyncSession, user: User, name: str, platform: str
     return device
 
 
+async def switch_device_node(session: AsyncSession, device: Device, node: Node) -> Device:
+    """Переносит устройство на другую локацию: старый ключ отзывается, новый выдаётся."""
+    user = (await session.execute(select(User).where(User.id == device.user_id))).scalar_one()
+    sub = await active_subscription(session, user)
+    if sub is None:
+        raise ValueError("Нет активной подписки")
+    if device.node_id == node.id:
+        return device
+
+    old_client = await node_client(session, device)
+    try:
+        await old_client.delete_user(device.remote_username)
+    except MarzbanError as exc:  # старая нода могла быть недоступна
+        log.warning("Не удалось убрать %s со старой локации: %s", device.remote_username, exc)
+
+    device.node_id = node.id
+    client = client_for(node)
+    data = await client.create_user(device.remote_username,
+                                    int(aware(sub.expires_at).timestamp()),
+                                    sub.traffic_gb, note=f"tg:{user.tg_id}")
+    _apply_remote(device, data, client.url)
+    device.is_active = True
+    await session.commit()
+    await session.refresh(device)
+    return device
+
+
 async def remove_device(session: AsyncSession, user: User, device_id: int) -> None:
     device = (await session.execute(
         select(Device).where(Device.id == device_id,

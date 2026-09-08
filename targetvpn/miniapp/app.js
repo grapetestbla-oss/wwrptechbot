@@ -513,6 +513,7 @@ function openDeviceSheet(deviceId) {
     <div class="stack" style="margin-top:12px">
       <button class="btn btn-primary wide" data-act="copy">📋 Скопировать ключ</button>
       <button class="btn btn-ghost wide" data-act="import">📲 Открыть в клиенте</button>
+      <button class="btn btn-ghost wide" data-act="region">🌍 Сменить локацию</button>
       <div class="row">
         <button class="btn btn-ghost btn-sm" data-act="refresh">♻️ Перевыпустить</button>
         <button class="btn btn-danger btn-sm" data-act="delete">🗑 Удалить</button>
@@ -538,6 +539,7 @@ function openDeviceSheet(deviceId) {
       return;
     }
     if (act === 'unbind') return openUnbind(device);
+    if (act === 'region') return openRegionPicker(device);
     if (act === 'delete') {
       if (!confirm('Удалить устройство и отозвать его ключ?')) return;
       try {
@@ -612,6 +614,41 @@ async function showBindCode() {
   } catch (err) {
     toast(err.message);
   }
+}
+
+async function openRegionPicker(device) {
+  let nodes = [];
+  try {
+    nodes = await api('/api/nodes');
+  } catch (err) {
+    return toast(err.message);
+  }
+  if (nodes.length < 2) return toast('Пока доступна одна локация');
+
+  openSheet(`
+    <div class="sheet-title">Локация устройства</div>
+    <p class="muted" style="margin-top:-6px;font-size:13px">
+      Ключ будет перевыпущен на выбранном сервере — обновите его в приложении
+      или клиенте после смены.</p>
+    <div class="stack" style="margin-top:14px">
+      ${nodes.map((n) => `<button class="btn ${n.title === device.node_title ? 'btn-primary' : 'btn-ghost'} wide"
+        data-region="${n.id}">${esc(n.flag)} ${esc(n.title)}${
+        n.title === device.node_title ? ' · сейчас' : ''}</button>`).join('')}
+    </div>`);
+
+  $('#sheet-body').querySelectorAll('[data-region]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await api(`/api/devices/${device.id}/region`, {
+          method: 'POST', body: { node_id: Number(btn.dataset.region) },
+        });
+        await refresh();
+        closeSheet();
+        toast('Локация изменена, ключ перевыпущен');
+        haptic('medium');
+      } catch (err) { toast(err.message); btn.disabled = false; }
+    }));
 }
 
 function openUnbind(device) {

@@ -6,7 +6,7 @@
 
 | Файл | Платформа | Чем собрано |
 |---|---|---|
-| `targetvpn-1.0.0.apk` | Android 7+ | Gradle, `-PapiBase=https://rustplus-steamconnect.us` |
+| `targetvpn-1.1.0.apk` | Android 7+ | Gradle, `-PapiBase=https://rustplus-steamconnect.us` |
 | `targetvpn-1.0.0.exe` | Windows 10/11 x64 | Go, `-X main.apiBase=https://rustplus-steamconnect.us` |
 
 Адрес сервера зашит в сборку, поэтому при смене домена файлы нужно пересобрать:

@@ -327,6 +327,36 @@ async def main() -> None:
                 "Authorization": "Bearer forged-token-0000", "X-HWID": "android-id-1234567890abcdef"})
             check("поддельный токен отклонён", r.status_code == 401)
 
+            # Вторая локация, чтобы проверить именно переключение.
+            await c.post("/api/admin/nodes", headers=oauth, json={
+                "code": "fi", "title": "Финляндия", "flag": "🇫🇮",
+                "url": "https://fi.demo.local:8000", "username": "admin", "password": "p"})
+            r = await c.get("/api/client/regions", headers=capp)
+            check("приложение видит список регионов",
+                  r.status_code == 200 and any(x["is_current"] for x in r.json()), r.text[:150])
+            other_region = [x for x in r.json() if not x["is_current"]]
+
+            if other_region:
+                target = other_region[0]
+                r = await c.post("/api/client/region", headers=capp, json={"node_id": target["id"]})
+                check("смена региона из приложения",
+                      r.status_code == 200 and r.json()["location"] == target["title"], r.text[:150])
+                r = await c.get("/api/client/state", headers=capp)
+                check("новая локация в статусе", r.json()["location"] == target["title"])
+
+            # Та же смена локации, но из мини-аппа.
+            r = await c.get("/api/nodes", headers=auth)
+            fi = [n for n in r.json() if n["code"] == "fi"][0]
+            r = await c.get("/api/state", headers=auth)
+            some_device = r.json()["devices"][0]["id"]
+            r = await c.post(f"/api/devices/{some_device}/region", headers=auth,
+                             json={"node_id": fi["id"]})
+            check("смена локации из мини-аппа",
+                  r.status_code == 200 and r.json()["node_title"] == "Финляндия", r.text[:150])
+
+            r = await c.post("/api/client/region", headers=capp, json={"node_id": 999})
+            check("несуществующий регион отклонён", r.status_code == 404)
+
             r = await c.get("/api/state", headers=auth)
             bound = [d for d in r.json()["devices"] if d["hwid_bound"]]
             check("мини-апп показывает привязку", len(bound) == 1 and "…" in bound[0]["hwid"],

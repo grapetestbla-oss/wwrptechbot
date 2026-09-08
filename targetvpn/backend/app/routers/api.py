@@ -238,6 +238,26 @@ async def unbind(payload: UnbindRequest, user: User = Depends(current_user),
         currency=payment.currency, comment=meta.get("comment", ""))
 
 
+@router.post("/devices/{device_id}/region", response_model=DeviceOut)
+async def change_region(device_id: int, payload: dict, user: User = Depends(current_user),
+                        session: AsyncSession = Depends(get_session)):
+    """Перенос устройства на другую локацию без пересоздания устройства."""
+    device = (await session.execute(select(Device).where(
+        Device.id == device_id, Device.user_id == user.id))).scalar_one_or_none()
+    if device is None:
+        raise HTTPException(404, "Устройство не найдено")
+    node = (await session.execute(select(Node).where(
+        Node.id == int(payload.get("node_id", 0)), Node.is_active.is_(True),
+        Node.url != ""))).scalar_one_or_none()
+    if node is None:
+        raise HTTPException(404, "Локация недоступна")
+    try:
+        device = await subs.switch_device_node(session, device, node)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return device_out(device, node)
+
+
 @router.post("/promo/check")
 async def promo_check(payload: PromoCheck, user: User = Depends(current_user),
                       session: AsyncSession = Depends(get_session)):

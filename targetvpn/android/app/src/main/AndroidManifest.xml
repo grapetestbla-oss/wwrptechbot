@@ -4,11 +4,17 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Проверяем, установлен ли совместимый VPN-клиент, чтобы передать ему ключ. -->
+    <!-- Android 11+ прячет чужие приложения: без этого блока система отвечает,
+         что открыть ссылку vless:// некому, даже когда клиент установлен. -->
     <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="vless" />
+        </intent>
         <package android:name="com.v2ray.ang" />
         <package android:name="app.hiddify.com" />
         <package android:name="com.github.kr328.clash" />
+        <package android:name="com.neko.v2ray" />
     </queries>
 
     <application

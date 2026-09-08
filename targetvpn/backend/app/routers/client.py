@@ -11,7 +11,9 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
-from ..models import utcnow
+from sqlalchemy import select
+
+from ..models import Node, utcnow
 from ..services import hwid as hwid_service
 from ..services import subs
 from ..services import settings_store
@@ -109,6 +111,47 @@ async def config(authorization: str = Header(default=""), x_hwid: str = Header(d
     return {"config": device.config_url,
             "location": await hwid_service.node_title(session, device),
             "expires_at": subs.aware(sub.expires_at).isoformat()}
+
+
+class RegionRequest(BaseModel):
+    node_id: int
+
+
+class RegionOut(BaseModel):
+    id: int
+    title: str
+    flag: str
+    country: str = ""
+    is_current: bool = False
+
+
+@router.get("/regions", response_model=list[RegionOut])
+async def regions(authorization: str = Header(default=""), x_hwid: str = Header(default=""),
+                  session: AsyncSession = Depends(get_session)):
+    """Локации, между которыми можно переключаться прямо в приложении."""
+    device, _ = await _auth(authorization, x_hwid, session)
+    rows = (await session.execute(select(Node).where(
+        Node.is_active.is_(True), Node.url != "").order_by(Node.sort_order, Node.id))).scalars().all()
+    return [RegionOut(id=n.id, title=n.title, flag=n.flag, country=n.country,
+                      is_current=n.id == device.node_id) for n in rows]
+
+
+@router.post("/region")
+async def switch_region(payload: RegionRequest, authorization: str = Header(default=""),
+                        x_hwid: str = Header(default=""),
+                        session: AsyncSession = Depends(get_session)):
+    """Смена локации: ключ перевыпускается на выбранной ноде."""
+    device, _ = await _auth(authorization, x_hwid, session)
+    node = (await session.execute(select(Node).where(
+        Node.id == payload.node_id, Node.is_active.is_(True),
+        Node.url != ""))).scalar_one_or_none()
+    if node is None:
+        raise HTTPException(404, "Локация недоступна")
+    try:
+        device = await subs.switch_device_node(session, device, node)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return {"ok": True, "location": node.title, "config": device.config_url}
 
 
 @router.get("/version")

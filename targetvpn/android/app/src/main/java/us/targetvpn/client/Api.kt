@@ -7,6 +7,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -63,6 +64,48 @@ class Api(private val context: Context) {
         )
     }
 
+    data class Region(
+        val id: Int,
+        val title: String,
+        val flag: String,
+        val isCurrent: Boolean,
+    )
+
+    suspend fun regions(): List<Region> = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url("${BuildConfig.API_BASE}/api/client/regions")
+            .header("Authorization", "Bearer ${storage.token.orEmpty()}")
+            .header("X-HWID", hwid)
+            .build()
+
+        val array = callArray(request)
+        (0 until array.length()).map { index ->
+            val item = array.getJSONObject(index)
+            Region(
+                id = item.getInt("id"),
+                title = item.optString("title"),
+                flag = item.optString("flag"),
+                isCurrent = item.optBoolean("is_current"),
+            )
+        }
+    }
+
+    /** Смена локации: сервер перевыпускает ключ на выбранной ноде. */
+    suspend fun switchRegion(regionId: Int): String = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("node_id", regionId).toString()
+        val request = Request.Builder()
+            .url("${BuildConfig.API_BASE}/api/client/region")
+            .post(body.toRequestBody(JSON))
+            .header("Authorization", "Bearer ${storage.token.orEmpty()}")
+            .header("X-HWID", hwid)
+            .build()
+
+        val json = call(request)
+        storage.config = json.optString("config")
+        storage.location = json.optString("location")
+        storage.location
+    }
+
     suspend fun state(): State = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url("${BuildConfig.API_BASE}/api/client/state")
@@ -94,6 +137,17 @@ class Api(private val context: Context) {
             .build()
         val json = call(request)
         json.getString("config").also { storage.config = it }
+    }
+
+    private fun callArray(request: Request): JSONArray {
+        http.newCall(request).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                if (response.code == 401) storage.token = null
+                throw ApiException("Ошибка сервера (${response.code})")
+            }
+            return JSONArray(text)
+        }
     }
 
     private fun call(request: Request): JSONObject {

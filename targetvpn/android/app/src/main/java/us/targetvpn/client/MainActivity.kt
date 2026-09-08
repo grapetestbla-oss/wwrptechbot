@@ -1,5 +1,6 @@
 package us.targetvpn.client
 
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -8,6 +9,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -32,6 +34,8 @@ class MainActivity : AppCompatActivity() {
         binding.connectButton.setOnClickListener { connect() }
         binding.copyButton.setOnClickListener { copyKey() }
         binding.refreshButton.setOnClickListener { refresh() }
+        binding.location.setOnClickListener { chooseRegion() }
+        binding.changeRegionButton.setOnClickListener { chooseRegion() }
 
         render()
         if (storage.isBound) refresh()
@@ -110,14 +114,77 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(key)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            if (intent.resolveActivity(packageManager) != null) {
+            // resolveActivity на Android 11+ врёт про отсутствие приложения,
+            // поэтому просто пробуем открыть и ловим отказ.
+            try {
                 startActivity(intent)
-            } else {
-                copyKey()
-                toast(getString(R.string.install_client))
-                startActivity(Intent(Intent.ACTION_VIEW,
-                    Uri.parse("https://play.google.com/store/apps/details?id=com.v2ray.ang")))
+            } catch (_: ActivityNotFoundException) {
+                showNoClientDialog(key)
             }
+        }
+    }
+
+    /** Совместимого клиента нет — предлагаем выбор, а не уводим в магазин молча. */
+    private fun showNoClientDialog(key: String) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.no_client_title)
+            .setMessage(R.string.no_client_message)
+            .setPositiveButton(R.string.copy_key) { _, _ ->
+                copyToClipboard(key)
+            }
+            .setNeutralButton(R.string.install_v2rayng) { _, _ ->
+                copyToClipboard(key)
+                openLink("https://play.google.com/store/apps/details?id=com.v2ray.ang")
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /** Выбор локации: список приходит с сервера, ключ перевыпускается на месте. */
+    private fun chooseRegion() {
+        lifecycleScope.launch {
+            val regions = runCatching { api.regions() }.getOrElse {
+                toast(it.message ?: getString(R.string.error_generic))
+                return@launch
+            }
+            if (regions.isEmpty()) {
+                toast(getString(R.string.no_regions))
+                return@launch
+            }
+
+            val titles = regions.map { "${it.flag} ${it.title}" }.toTypedArray()
+            val checked = regions.indexOfFirst { it.isCurrent }
+            AlertDialog.Builder(this@MainActivity)
+                .setTitle(R.string.choose_region)
+                .setSingleChoiceItems(titles, checked) { dialog, index ->
+                    dialog.dismiss()
+                    val region = regions[index]
+                    if (region.isCurrent) return@setSingleChoiceItems
+                    switchRegion(region.id)
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
+    }
+
+    private fun switchRegion(regionId: Int) {
+        binding.changeRegionButton.isEnabled = false
+        lifecycleScope.launch {
+            runCatching { api.switchRegion(regionId) }
+                .onSuccess {
+                    toast(getString(R.string.region_changed, it))
+                    refresh()
+                }
+                .onFailure { toast(it.message ?: getString(R.string.error_generic)) }
+            binding.changeRegionButton.isEnabled = true
+        }
+    }
+
+    private fun openLink(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (_: ActivityNotFoundException) {
+            toast(getString(R.string.error_generic))
         }
     }
 
@@ -127,6 +194,10 @@ class MainActivity : AppCompatActivity() {
             toast(getString(R.string.no_key))
             return
         }
+        copyToClipboard(key)
+    }
+
+    private fun copyToClipboard(key: String) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("TargetVPN", key))
         toast(getString(R.string.key_copied))
