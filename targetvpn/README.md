@@ -55,6 +55,8 @@ backend/            FastAPI: API мини-аппа, админка, вебхук
 bot/bot.py          aiogram-бот: вход в Mini App, оплата звёздами, уведомления
 miniapp/            Mini App без сборки: index.html · styles.css · app.js · admin.js
 android/            приложение TargetVPN (Kotlin) + инструкция по сборке
+windows/            клиент для Windows на Go: HWID, Xray, системный прокси
+dist/               готовые сборки, которые раздаёт сам сервер
 ios/                приложение TargetVPN (SwiftUI), проект собирается XcodeGen
 deploy/             install.sh (бот и Mini App) · install_node.sh (Marzban + Reality)
                     uninstall.sh · systemd, nginx, docker-compose
@@ -126,11 +128,15 @@ systemctl enable --now targetvpn-api targetvpn-bot
 |---|---|
 | Android | APK из GitHub Actions, выложенный на сервер или в канал |
 | iOS | приглашение TestFlight или страница с инструкцией по сайдлоаду |
-| Windows | пока своей сборки нет — можно указать релиз Hiddify или Nekoray, они работают с нашими ключами |
+| Windows | `dist/targetvpn-1.0.0.exe` — свой клиент на Go (прокси-режим поверх Xray) |
 
-Windows-клиента в репозитории нет: подключение на десктопе сейчас идёт через
-сторонний клиент и ключ из мини-аппа. Кнопка нужна, чтобы дать пользователю
-одну понятную ссылку вместо инструкции.
+Готовые сборки лежат в `dist/` и приезжают на сервер вместе с кодом: установщик
+кладёт их в `/opt/targetvpn/data/downloads` и сам прописывает ссылки, поэтому
+файлы раздаются с вашего домена, а не со сторонних хостингов. Опубликовать
+новую сборку вручную: `.venv/bin/python scripts/publish_build.py файл --version 1.0.1`.
+
+Сборки под iOS в `dist/` нет: `.ipa` собирается только на macOS-раннере, а для
+установки нужен сайдлоад или TestFlight.
 
 ## Оплата через LZT Market
 

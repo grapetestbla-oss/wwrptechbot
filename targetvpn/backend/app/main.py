@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -21,6 +22,9 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger("targetvpn")
 
 MINIAPP_DIR = Path(__file__).resolve().parents[2] / "miniapp"
+# Сюда установщик кладёт APK, IPA и EXE — мини-апп раздаёт их с этого же домена.
+DOWNLOADS_DIR = Path(os.getenv("DOWNLOADS_DIR",
+                               Path(__file__).resolve().parents[2] / "data" / "downloads"))
 
 
 async def expiry_worker() -> None:
@@ -77,6 +81,9 @@ app.include_router(payments.router)
 
 if MINIAPP_DIR.exists():
     app.mount("/app", StaticFiles(directory=MINIAPP_DIR, html=True), name="miniapp")
+
+DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/downloads", StaticFiles(directory=DOWNLOADS_DIR), name="downloads")
 
 
 @app.get("/health")

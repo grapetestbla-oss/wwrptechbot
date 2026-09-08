@@ -9,7 +9,10 @@
 </head>
 <body>
   <div id="splash" class="splash">
-    <div class="logo-mark">T</div>
+    <picture class="logo-mark">
+      <source srcset="./logo.webp" type="image/webp" />
+      <img src="./logo.png" alt="TargetVPN" />
+    </picture>
     <div class="splash-title">TargetVPN</div>
     <div class="spinner"></div>
   </div>
@@ -25,7 +28,13 @@
     <section class="page" data-page="home">
       <header class="hero">
         <div class="hero-top">
-          <div class="brand"><span class="logo-mark small">T</span> TargetVPN</div>
+          <div class="brand">
+            <picture class="logo-mark small">
+              <source srcset="./logo.webp" type="image/webp" />
+              <img src="./logo.png" alt="" />
+            </picture>
+            TargetVPN
+          </div>
           <button class="icon-btn" id="btn-support" title="Поддержка">💬</button>
         </div>
         <div id="status-card" class="status-card"></div>

@@ -396,6 +396,15 @@ async def main() -> None:
             check("версия попадает в кнопку",
                   downloads[0]["version"] == "1.0.0" and downloads[0]["emoji"] == "🤖")
 
+            # Файл из каталога раздачи должен отдаваться самим сервером.
+            from app.main import DOWNLOADS_DIR
+            probe = DOWNLOADS_DIR / "probe.apk"
+            probe.write_bytes(b"PK\x03\x04 build")
+            r = await c.get("/downloads/probe.apk")
+            check("сборки раздаются с сервера",
+                  r.status_code == 200 and r.content.startswith(b"PK"), r.text[:80])
+            probe.unlink()
+
             r = await c.get("/internal/downloads", headers={"X-Internal-Secret": "smoke-secret"})
             check("бот получает те же ссылки", len(r.json()) == 2, r.text[:120])
 

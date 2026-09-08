@@ -14,4 +14,8 @@ android/app/build/
 android/local.properties
 android/.kotlin/
 *.apk
+# Готовые сборки для раздачи с сервера — их держим в репозитории.
+!dist/*.apk
+!dist/*.ipa
+!dist/*.exe
 *.keystore

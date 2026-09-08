@@ -237,6 +237,22 @@ ufw allow 80/tcp  >/dev/null 2>&1 || true
 ufw allow 443/tcp >/dev/null 2>&1 || true
 yes | ufw enable  >/dev/null 2>&1 || true
 
+# --- 8.1 Сборки приложения -------------------------------------------------
+# Файлы из dist/ приезжают вместе с кодом и раздаются с этого же домена.
+if compgen -G "$APP_DIR/dist/*" >/dev/null 2>&1; then
+  say "Публикуем сборки приложения"
+  for build in "$APP_DIR"/dist/*; do
+    case "$build" in
+      *.apk|*.ipa|*.exe|*.msi|*.zip)
+        version=$(basename "$build" | sed -n 's/.*-\([0-9][0-9.]*\)\.[a-z]*$/\1/p')
+        sudo -u "$APP_USER" env -C "$APP_DIR" "$APP_DIR/.venv/bin/python" \
+          scripts/publish_build.py "$build" ${version:+--version "$version"} \
+          || warn "не удалось опубликовать $(basename "$build")"
+        ;;
+    esac
+  done
+fi
+
 # --- 9. Проверка ----------------------------------------------------------
 say "Проверяем, что API отвечает на 127.0.0.1:${API_PORT}"
 API_OK=0
