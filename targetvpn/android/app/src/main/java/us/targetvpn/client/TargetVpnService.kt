@@ -10,7 +10,12 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import targetcore.Targetcore
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.util.concurrent.TimeUnit
 
 /**
  * Свой туннель: поднимает TUN-интерфейс и отдаёт его дескриптор нативному
@@ -103,6 +108,7 @@ class TargetVpnService : VpnService() {
             Targetcore.start(descriptor.fd.toLong(), config, MTU.toLong())
             tunnel = descriptor
             broadcastState(true, null)
+            runSelfCheck()
         } catch (error: Exception) {
             Log.e(TAG, "ядро не запустилось", error)
             descriptor.close()
@@ -122,9 +128,43 @@ class TargetVpnService : VpnService() {
 
         // Трафик самого приложения не заворачиваем: иначе соединение ядра
         // с сервером ушло бы в собственный туннель и получилась бы петля.
-        runCatching { builder.addDisallowedApplication(packageName) }
+        // Если исключение не применилось — туннель бессмысленно поднимать.
+        builder.addDisallowedApplication(packageName)
 
         return builder.establish() ?: throw IllegalStateException("VpnService.establish вернул null")
+    }
+
+    /**
+     * Проверка после запуска: запрос идёт в локальный вход ядра, минуя TUN.
+     * Успех означает, что ядро и сервер работают, и если интернета всё равно
+     * нет — дело в маршрутизации на устройстве, а не в подписке.
+     */
+    private fun runSelfCheck() {
+        Thread {
+            val client = OkHttpClient.Builder()
+                .proxy(Proxy(Proxy.Type.SOCKS,
+                    InetSocketAddress("127.0.0.1", XrayConfig.SOCKS_PORT)))
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .build()
+
+            val message = try {
+                // Адрес без имени: проверяем именно канал, а не работу DNS.
+                val request = Request.Builder().url("https://1.1.1.1/cdn-cgi/trace").build()
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) getString(R.string.check_ok)
+                    else getString(R.string.check_failed, "HTTP ${response.code}")
+                }
+            } catch (error: Exception) {
+                Log.w(TAG, "самопроверка не прошла", error)
+                getString(R.string.check_failed, error.message ?: error.javaClass.simpleName)
+            }
+
+            sendBroadcast(Intent(MainActivity.ACTION_STATE)
+                .setPackage(packageName)
+                .putExtra(MainActivity.EXTRA_CONNECTED, true)
+                .putExtra(MainActivity.EXTRA_CHECK, message))
+        }.start()
     }
 
     private fun stopTunnel() {

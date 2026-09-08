@@ -143,6 +143,15 @@
                 android:text="@string/change_region"
                 android:textColor="@color/text" />
 
+            <TextView
+                android:id="@+id/diagnostic"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:textColor="@color/muted"
+                android:textSize="12.5sp"
+                android:visibility="gone" />
+
             <Button
                 android:id="@+id/connectButton"
                 android:layout_width="match_parent"

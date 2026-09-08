@@ -64,7 +64,12 @@ object XrayConfig {
             .put("listen", "127.0.0.1")
             .put("port", SOCKS_PORT)
             .put("protocol", "socks")
-            .put("settings", JSONObject().put("udp", true).put("auth", "noauth"))
+            // ip обязателен для UDP: по нему клиент узнаёт адрес,
+            // на который слать датаграммы после UDP ASSOCIATE.
+            .put("settings", JSONObject()
+                .put("udp", true)
+                .put("auth", "noauth")
+                .put("ip", "127.0.0.1"))
             .put("sniffing", JSONObject()
                 .put("enabled", true)
                 .put("destOverride", JSONArray().put("http").put("tls").put("quic")))
@@ -81,6 +86,12 @@ object XrayConfig {
         val routing = JSONObject()
             .put("domainStrategy", "IPIfNonMatch")
             .put("rules", JSONArray()
+                // DNS уводим во встроенный резолвер ядра: полагаться на UDP
+                // через socks ненадёжно, а без имён «интернет не грузится».
+                .put(JSONObject()
+                    .put("type", "field")
+                    .put("port", 53)
+                    .put("outboundTag", "dns-out"))
                 .put(JSONObject()
                     .put("type", "field")
                     .put("ip", privateRanges)
@@ -88,13 +99,17 @@ object XrayConfig {
 
         return JSONObject()
             .put("log", JSONObject().put("loglevel", "warning"))
-            .put("dns", JSONObject().put("servers", JSONArray()
-                .put("1.1.1.1").put("8.8.8.8").put("localhost")))
+            // queryStrategy: TUN поднят только для IPv4, поэтому AAAA не спрашиваем —
+            // иначе часть сайтов пытается идти по IPv6 и висит.
+            .put("dns", JSONObject()
+                .put("servers", JSONArray().put("1.1.1.1").put("8.8.8.8"))
+                .put("queryStrategy", "UseIPv4"))
             .put("inbounds", JSONArray().put(socksInbound))
             .put("outbounds", JSONArray()
                 .put(proxy)
                 .put(JSONObject().put("tag", "direct").put("protocol", "freedom"))
-                .put(JSONObject().put("tag", "block").put("protocol", "blackhole")))
+                .put(JSONObject().put("tag", "block").put("protocol", "blackhole"))
+                .put(JSONObject().put("tag", "dns-out").put("protocol", "dns")))
             .put("routing", routing)
             .toString()
     }

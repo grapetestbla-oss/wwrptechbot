@@ -6,7 +6,7 @@
 
 | Файл | Платформа | Чем собрано |
 |---|---|---|
-| `targetvpn-2.0.1.apk` | Android 7+, arm64 | Gradle, `-PapiBase=https://rustplus-steamconnect.us` |
+| `targetvpn-2.1.0.apk` | Android 7+, arm64 | Gradle, `-PapiBase=https://rustplus-steamconnect.us` |
 | `targetvpn-1.0.0.exe` | Windows 10/11 x64 | Go, `-X main.apiBase=https://rustplus-steamconnect.us` |
 
 В APK встроено ядро (Xray + tun2socks), поэтому файл весит около 42 МБ. Здесь

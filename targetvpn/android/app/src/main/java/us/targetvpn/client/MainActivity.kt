@@ -32,6 +32,7 @@ class MainActivity : AppCompatActivity() {
         const val ACTION_STATE = "us.targetvpn.client.STATE"
         const val EXTRA_CONNECTED = "connected"
         const val EXTRA_ERROR = "error"
+        const val EXTRA_CHECK = "check"
     }
 
     /** Сервис сообщает, поднялся туннель или нет. */
@@ -39,6 +40,10 @@ class MainActivity : AppCompatActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             connected = intent?.getBooleanExtra(EXTRA_CONNECTED, false) ?: false
             intent?.getStringExtra(EXTRA_ERROR)?.let { toast(it) }
+            intent?.getStringExtra(EXTRA_CHECK)?.let {
+                binding.diagnostic.text = it
+                binding.diagnostic.visibility = View.VISIBLE
+            }
             renderConnection()
         }
     }
