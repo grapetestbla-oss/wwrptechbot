@@ -9,9 +9,13 @@ from ..models import Setting, utcnow
 DEFAULTS: dict[str, str] = {
     # Цена одной отвязки HWID, рублей.
     "unbind_price_rub": "50",
-    # Ссылка на APK и его версия — показываются в мини-аппе.
+    # Ссылки на сборки приложения. Кнопка появляется, только если ссылка задана.
     "apk_url": "",
     "apk_version": "",
+    "ios_url": "",
+    "ios_version": "",
+    "windows_url": "",
+    "windows_version": "",
     # Сколько минут живёт код привязки приложения.
     "bind_code_ttl_min": "15",
 }
@@ -50,3 +54,23 @@ async def all_values(session: AsyncSession) -> dict[str, str]:
     values = dict(DEFAULTS)
     values.update({row.key: row.value for row in rows})
     return values
+
+
+# Платформы для кнопок скачивания: ключ настройки -> как показать.
+DOWNLOADS = [
+    ("android", "apk_url", "apk_version", "🤖", "Android"),
+    ("ios", "ios_url", "ios_version", "🍏", "iPhone / iPad"),
+    ("windows", "windows_url", "windows_version", "🪟", "Windows"),
+]
+
+
+async def downloads(session: AsyncSession) -> list[dict]:
+    """Список доступных сборок — только те, для которых задана ссылка."""
+    values = await all_values(session)
+    result = []
+    for platform, url_key, version_key, emoji, title in DOWNLOADS:
+        url = (values.get(url_key) or "").strip()
+        if url:
+            result.append({"platform": platform, "title": title, "emoji": emoji,
+                           "url": url, "version": (values.get(version_key) or "").strip()})
+    return result

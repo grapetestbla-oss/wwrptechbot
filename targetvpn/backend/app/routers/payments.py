@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db import get_session
 from ..models import Device, Notification, Payment, PaymentStatus, User
 from ..security import require_internal
-from ..services import billing, subs
+from ..services import billing, settings_store, subs
 
 log = logging.getLogger("payments")
 router = APIRouter(tags=["payments"])
@@ -68,6 +68,12 @@ async def pending_notifications(limit: int = 50, session: AsyncSession = Depends
         row.is_sent = True
     await session.commit()
     return [{"tg_id": r.tg_id, "text": r.text} for r in rows]
+
+
+@router.get("/internal/downloads", dependencies=[Depends(require_internal)])
+async def downloads(session: AsyncSession = Depends(get_session)):
+    """Ссылки на сборки для кнопок в боте."""
+    return await settings_store.downloads(session)
 
 
 @router.post("/internal/tick", dependencies=[Depends(require_internal)])

@@ -83,8 +83,7 @@ class StateOut(BaseModel):
     trial_available: bool = False
     nodes_ready: bool = False
     payment_methods: list[str] = []
-    apk_url: str = ""
-    apk_version: str = ""
+    downloads: list["DownloadOut"] = []
     unbind_price_rub: float = 50.0
 
 
@@ -153,6 +152,14 @@ class PromoCheck(BaseModel):
     plan_id: int
 
 
+class DownloadOut(BaseModel):
+    platform: str
+    title: str
+    emoji: str
+    url: str
+    version: str = ""
+
+
 class BindCodeOut(BaseModel):
     code: str
     expires_at: datetime
@@ -168,6 +175,10 @@ class SettingsUpsert(BaseModel):
     unbind_price_rub: float | None = None
     apk_url: str | None = None
     apk_version: str | None = None
+    ios_url: str | None = None
+    ios_version: str | None = None
+    windows_url: str | None = None
+    windows_version: str | None = None
     bind_code_ttl_min: int | None = None
 
 
@@ -254,3 +265,4 @@ class StatsOut(BaseModel):
 
 
 AuthResponse.model_rebuild()
+StateOut.model_rebuild()

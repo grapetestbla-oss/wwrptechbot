@@ -5,7 +5,7 @@ const API = (location.origin.includes('localhost') || location.origin.startsWith
 
 const state = { token: '', user: null, sub: null, devices: [], plans: [], nodes: [], subUrl: '',
                 trialAvailable: false, nodesReady: true, supportUrl: '', methods: [],
-                apkUrl: '', apkVersion: '', unbindPrice: 50, promo: null, timer: null,
+                downloads: [], unbindPrice: 50, promo: null, timer: null,
                 bindTimer: null };
 
 const $ = (sel) => document.querySelector(sel);
@@ -111,8 +111,7 @@ async function refresh() {
   state.trialAvailable = data.trial_available;
   state.methods = data.payment_methods || [];
   state.nodesReady = data.nodes_ready !== false;
-  state.apkUrl = data.apk_url || '';
-  state.apkVersion = data.apk_version || '';
+  state.downloads = data.downloads || [];
   state.unbindPrice = data.unbind_price_rub ?? 50;
   renderHome();
   renderDevices();
@@ -564,15 +563,19 @@ function renderAppCard() {
         Подключение в один тап, без настройки ключей. Приложение привязывается к телефону:
         доступ работает только на нём, смена устройства — ${state.unbindPrice} ₽.</p>
       <div class="stack">
-        ${state.apkUrl ? `<button class="btn btn-primary wide" id="btn-apk">
-          ⬇️ Скачать APK${state.apkVersion ? ' · ' + esc(state.apkVersion) : ''}</button>`
-        : '<div class="empty" style="padding:12px">Сборка приложения скоро появится</div>'}
+        ${state.downloads.length
+          ? state.downloads.map((d, i) => `<button class="btn ${i === 0 ? 'btn-primary' : 'btn-ghost'} wide"
+              data-download="${esc(d.url)}">${esc(d.emoji)} Скачать для ${esc(d.title)}${
+              d.version ? ' · ' + esc(d.version) : ''}</button>`).join('')
+          : '<div class="empty" style="padding:12px">Сборки приложения скоро появятся</div>'}
         <button class="btn btn-ghost wide" id="btn-bind">🔑 Показать код привязки</button>
       </div>
     </div>`;
-  $('#btn-apk')?.addEventListener('click', () => {
-    tg?.openLink?.(state.apkUrl) || window.open(state.apkUrl, '_blank');
-  });
+  box.querySelectorAll('[data-download]').forEach((btn) => btn.addEventListener('click', () => {
+    const url = btn.dataset.download;
+    haptic();
+    tg?.openLink?.(url) || window.open(url, '_blank');
+  }));
   $('#btn-bind').addEventListener('click', showBindCode);
 }
 

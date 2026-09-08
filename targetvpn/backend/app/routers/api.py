@@ -121,8 +121,7 @@ async def state(user: User = Depends(current_user), session: AsyncSession = Depe
                              and sub is None and ready),
         nodes_ready=ready,
         payment_methods=available_payment_methods(),
-        apk_url=await settings_store.get(session, "apk_url"),
-        apk_version=await settings_store.get(session, "apk_version"),
+        downloads=await settings_store.downloads(session),
         unbind_price_rub=await settings_store.get_float(session, "unbind_price_rub", 50.0),
     )
 

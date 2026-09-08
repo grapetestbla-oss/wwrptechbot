@@ -34,7 +34,9 @@ WELCOME = (
 
 def main_kb() -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(text="🚀 Открыть TargetVPN",
-                                  web_app=WebAppInfo(url=settings.webapp_url))]]
+                                  web_app=WebAppInfo(url=settings.webapp_url))],
+            [InlineKeyboardButton(text="📥 Скачать приложение",
+                                  callback_data="downloads")]]
     if settings.support_url:
         rows.append([InlineKeyboardButton(text="💬 Поддержка", url=settings.support_url)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -60,11 +62,40 @@ async def open_app(message: Message):
     await message.answer("Приложение TargetVPN:", reply_markup=main_kb())
 
 
+@router.message(Command("download", "install"))
+async def download(message: Message):
+    """Кнопки со ссылками на сборки для Android, iOS и Windows."""
+    try:
+        builds = await internal("GET", "/internal/downloads") or []
+    except Exception:  # noqa: BLE001 - бэкенд мог перезапускаться
+        log.exception("Не удалось получить ссылки на сборки")
+        builds = []
+
+    if not builds:
+        return await message.answer(
+            "Сборки приложения ещё не выложены.\n"
+            "Пока подключайтесь по ключу из мини-аппа — он работает "
+            "в v2rayNG, Hiddify и Streisand.",
+            reply_markup=main_kb())
+
+    rows = [[InlineKeyboardButton(
+        text=f"{b['emoji']} {b['title']}" + (f" · {b['version']}" if b.get("version") else ""),
+        url=b["url"])] for b in builds]
+    rows.append([InlineKeyboardButton(text="🚀 Открыть TargetVPN",
+                                      web_app=WebAppInfo(url=settings.webapp_url))])
+    await message.answer(
+        "<b>Скачать приложение TargetVPN</b>\n\n"
+        "После установки откройте мини-приложение, нажмите «Показать код привязки» "
+        "и введите код в приложении — подписка закрепится за этим устройством.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
 @router.message(Command("help"))
 async def help_cmd(message: Message):
     await message.answer(
         "Всё управление — в мини-приложении: тарифы, оплата, ключи, устройства.\n"
         "Если ключ перестал работать — нажмите «Перевыпустить» у устройства.\n"
+        "Скачать приложение: /download\n"
         f"Поддержка: {settings.support_url or 'скоро'}",
         reply_markup=main_kb())
 
@@ -83,6 +114,12 @@ async def admin_cmd(message: Message):
         "Админ-панель находится в мини-приложении — вкладка «Админка».\n"
         "Там: тарифы и цены, выдача подписок, блокировки, промокоды, статистика.",
         reply_markup=main_kb())
+
+
+@router.callback_query(F.data == "downloads")
+async def downloads_callback(query):
+    await query.answer()
+    await download(query.message)
 
 
 # --- Оплата звёздами ---

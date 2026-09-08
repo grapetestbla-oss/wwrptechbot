@@ -477,11 +477,21 @@ async function adminSettings(body) {
         <div class="field"><label>Цена отвязки устройства, ₽</label>
           <input class="input" id="st-unbind" type="number" min="0" step="1"
             value="${Number(cfg.unbind_price_rub)}" /></div>
-        <div class="field"><label>Ссылка на APK</label>
+        <div class="field"><label>🤖 Ссылка на APK (Android)</label>
           <input class="input" id="st-apk" value="${esc(cfg.apk_url)}"
             placeholder="https://.../targetvpn.apk" /></div>
-        <div class="field"><label>Версия APK</label>
+        <div class="field"><label>Версия Android-сборки</label>
           <input class="input" id="st-ver" value="${esc(cfg.apk_version)}" placeholder="1.0.0" /></div>
+        <div class="field"><label>🍏 Ссылка для iPhone / iPad</label>
+          <input class="input" id="st-ios" value="${esc(cfg.ios_url)}"
+            placeholder="https://testflight.apple.com/join/..." /></div>
+        <div class="field"><label>Версия iOS-сборки</label>
+          <input class="input" id="st-ios-ver" value="${esc(cfg.ios_version)}" placeholder="1.0.0" /></div>
+        <div class="field"><label>🪟 Ссылка для Windows</label>
+          <input class="input" id="st-win" value="${esc(cfg.windows_url)}"
+            placeholder="https://.../targetvpn-setup.exe" /></div>
+        <div class="field"><label>Версия Windows-сборки</label>
+          <input class="input" id="st-win-ver" value="${esc(cfg.windows_version)}" placeholder="1.0.0" /></div>
         <div class="field"><label>Срок жизни кода привязки, минут</label>
           <input class="input" id="st-ttl" type="number" min="1" max="120"
             value="${Number(cfg.bind_code_ttl_min)}" /></div>
@@ -489,6 +499,7 @@ async function adminSettings(body) {
       </div>
     </div>
     <p class="muted" style="font-size:12px">
+      Кнопка скачивания появляется у пользователей только для тех платформ, где заполнена ссылка.
       Отвязать устройство бесплатно можно в карточке пользователя на вкладке «Юзеры».</p>`;
 
   document.querySelector('#st-save').addEventListener('click', async (e) => {
@@ -498,6 +509,10 @@ async function adminSettings(body) {
         unbind_price_rub: Number(document.querySelector('#st-unbind').value),
         apk_url: document.querySelector('#st-apk').value.trim(),
         apk_version: document.querySelector('#st-ver').value.trim(),
+        ios_url: document.querySelector('#st-ios').value.trim(),
+        ios_version: document.querySelector('#st-ios-ver').value.trim(),
+        windows_url: document.querySelector('#st-win').value.trim(),
+        windows_version: document.querySelector('#st-win-ver').value.trim(),
         bind_code_ttl_min: Number(document.querySelector('#st-ttl').value),
       }});
       toast('Настройки сохранены');

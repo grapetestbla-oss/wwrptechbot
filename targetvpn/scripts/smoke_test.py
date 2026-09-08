@@ -380,6 +380,33 @@ async def main() -> None:
             r = await c.post("/api/admin/settings", headers=auth, json={"apk_url": "http://x"})
             check("настройки закрыты от обычных юзеров", r.status_code == 403)
 
+            # --- кнопки скачивания под три платформы ---
+            r = await c.get("/api/state", headers=auth)
+            check("без ссылок кнопок скачивания нет", r.json()["downloads"] == [])
+
+            r = await c.post("/api/admin/settings", headers=oauth, json={
+                "apk_url": "https://cdn.example/targetvpn.apk", "apk_version": "1.0.0",
+                "windows_url": "https://cdn.example/targetvpn.exe"})
+            check("админ задаёт ссылки на сборки", r.status_code == 200)
+
+            r = await c.get("/api/state", headers=auth)
+            downloads = r.json()["downloads"]
+            check("показываются только заполненные платформы",
+                  [d["platform"] for d in downloads] == ["android", "windows"], str(downloads)[:160])
+            check("версия попадает в кнопку",
+                  downloads[0]["version"] == "1.0.0" and downloads[0]["emoji"] == "🤖")
+
+            r = await c.get("/internal/downloads", headers={"X-Internal-Secret": "smoke-secret"})
+            check("бот получает те же ссылки", len(r.json()) == 2, r.text[:120])
+
+            r = await c.get("/api/client/version")
+            builds = r.json()["builds"]
+            check("приложение видит сборки по платформам",
+                  builds["android"]["version"] == "1.0.0" and "windows" in builds, r.text[:160])
+
+            await c.post("/api/admin/settings", headers=oauth,
+                         json={"apk_url": "", "windows_url": ""})
+
             # --- запуск без ноды: ничего не продаём ---
             r = await c.get("/api/admin/nodes", headers=oauth)
             for node in r.json():

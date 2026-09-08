@@ -14,7 +14,7 @@ from ..db import get_session
 from ..models import utcnow
 from ..services import hwid as hwid_service
 from ..services import subs
-from ..services.settings_store import get as get_setting
+from ..services import settings_store
 
 router = APIRouter(prefix="/api/client", tags=["client"])
 
@@ -114,5 +114,8 @@ async def config(authorization: str = Header(default=""), x_hwid: str = Header(d
 @router.get("/version")
 async def version(session: AsyncSession = Depends(get_session)):
     """Приложение проверяет, не вышла ли новая версия."""
-    return {"version": await get_setting(session, "apk_version"),
-            "url": await get_setting(session, "apk_url")}
+    builds = {d["platform"]: {"version": d["version"], "url": d["url"]}
+              for d in await settings_store.downloads(session)}
+    android = builds.get("android", {"version": "", "url": ""})
+    # version/url оставлены для совместимости с первой версией приложения.
+    return {"version": android["version"], "url": android["url"], "builds": builds}
