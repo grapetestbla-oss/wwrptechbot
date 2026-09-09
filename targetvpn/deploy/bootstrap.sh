@@ -61,8 +61,26 @@ fi
 
 # --- Код -------------------------------------------------------------------
 say "Забираем код из ветки $BRANCH"
-rm -rf "$SRC"
-git clone -q --depth 1 -b "$BRANCH" "$REPO" "$SRC" || die "не удалось склонировать репозиторий"
+# Уходим из каталога клона: скрипт часто запускают прямо из него, а удалять
+# каталог под собой нельзя — именно на этом ломался повторный запуск.
+cd /
+
+if [[ -d "$SRC/.git" ]]; then
+  git -C "$SRC" remote set-url origin "$REPO" 2>/dev/null || true
+  if git -C "$SRC" fetch -q --depth 1 origin "$BRANCH" && \
+     git -C "$SRC" reset -q --hard FETCH_HEAD; then
+    echo "Обновлено: $SRC"
+  else
+    warn "Не удалось обновить клон, забираем заново"
+    rm -rf "$SRC"
+  fi
+fi
+
+if [[ ! -d "$SRC/.git" ]]; then
+  rm -rf "$SRC"
+  git clone -q --depth 1 -b "$BRANCH" "$REPO" "$SRC" || die "не удалось склонировать репозиторий"
+fi
+
 cd "$SRC/targetvpn"
 
 # --- Бот и Mini App --------------------------------------------------------
