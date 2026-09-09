@@ -170,6 +170,7 @@ class BindCodeOut(BaseModel):
 class UnbindRequest(BaseModel):
     device_id: int
     method: str = "stars"
+    delete: bool = False  # удалить устройство целиком, а не только снять привязку
 
 
 class SettingsUpsert(BaseModel):

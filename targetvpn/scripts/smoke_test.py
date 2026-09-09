@@ -402,6 +402,16 @@ async def main() -> None:
                   str(bound)[:120])
             check("цена отвязки по умолчанию 50₽", r.json()["unbind_price_rub"] == 50.0)
 
+            # --- привязанное устройство нельзя удалить бесплатно ---
+            r = await c.delete(f"/api/devices/{client_device}", headers=auth)
+            check("привязанное устройство не удаляется даром",
+                  r.status_code == 400 and "50" in r.json()["detail"], r.text[:150])
+            r = await c.get("/api/state", headers=auth)
+            check("устройство осталось в списке после отказа",
+                  any(d["id"] == client_device for d in r.json()["devices"]))
+            r = await c.get("/api/client/state", headers=capp)
+            check("отказ в удалении не сломал привязку", r.status_code == 200)
+
             # --- платная отвязка ---
             _cfg.lzt_token, _cfg.lzt_user_id, _cfg.lzt_username = "test", 1, "targetvpn"
             r = await c.post("/api/unbind", headers=auth,
@@ -513,6 +523,33 @@ async def main() -> None:
 
             r = await c.post("/api/admin/balance", headers=auth, json={"tg_id": 555001, "amount": 5})
             check("баланс меняет только админ", r.status_code == 403)
+
+            # --- платное удаление привязанного устройства ---
+            await c.post("/api/admin/balance", headers=oauth,
+                         json={"tg_id": 555001, "amount": 100, "reason": "на удаление"})
+            r = await c.post("/api/bind-code", headers=auth)
+            await c.post("/api/client/bind", json={
+                "code": r.json()["code"], "hwid": "delete-me-0123456789abcdef",
+                "name": "Старый телефон"})
+            r = await c.get("/api/state", headers=auth)
+            paid_dev = [d for d in r.json()["devices"] if d["hwid_bound"]]
+            if paid_dev:
+                dev_id = paid_dev[0]["id"]
+                before = r.json()["user"]["balance_rub"]
+                r = await c.post("/api/unbind", headers=auth,
+                                 json={"device_id": dev_id, "method": "balance", "delete": True})
+                check("платное удаление проходит с баланса",
+                      r.status_code == 200 and r.json()["activated"], r.text[:150])
+                r = await c.get("/api/state", headers=auth)
+                check("устройство исчезло после оплаты",
+                      all(d["id"] != dev_id for d in r.json()["devices"]))
+                check("с баланса списана цена отвязки",
+                      r.json()["user"]["balance_rub"] == before - 50.0,
+                      str(r.json()["user"]["balance_rub"]))
+            else:
+                check("платное удаление привязанного устройства", False, "нет привязанных")
+            await c.post("/api/admin/balance", headers=oauth,
+                         json={"tg_id": 555001, "amount": -1000})
 
             # --- страница подключения ---
             r = await c.get("/api/state", headers=auth)

@@ -16,7 +16,7 @@ from ..models import (Device, Payment, PaymentKind, PaymentStatus, Plan, PromoCo
                       PromoRedemption, User, utcnow)
 from . import hwid as hwid_service
 from . import settings_store
-from .subs import aware, grant_subscription, notify
+from .subs import aware, grant_subscription, notify, remove_device
 
 log = logging.getLogger("billing")
 
@@ -314,16 +314,23 @@ async def top_up_balance(session: AsyncSession, user: User, amount: float,
 
 
 async def start_unbind_payment(session: AsyncSession, user: User, device: Device,
-                               method: str) -> tuple[Payment, str]:
-    """Счёт на отвязку HWID. Возвращает платёж и ссылку (или invoice link звёзд)."""
+                               method: str, *, delete_after: bool = False
+                               ) -> tuple[Payment, str]:
+    """Счёт на освобождение устройства. Возвращает платёж и ссылку (invoice link звёзд).
+
+    delete_after=True — после оплаты устройство удаляется целиком (слот освобождается),
+    иначе снимается только привязка HWID и запись остаётся.
+    """
     if device.hwid is None:
         raise BillingError("У этого устройства нет привязки")
     price = await settings_store.get_float(session, "unbind_price_rub", 50.0)
-    title = "TargetVPN · отвязка устройства"
+    title = "TargetVPN · удаление устройства" if delete_after \
+        else "TargetVPN · отвязка устройства"
 
     payment = Payment(user_id=user.id, plan_id=None, provider=method,
                       kind=PaymentKind.unbind, device_id=device.id,
-                      amount_rub=price, currency="RUB", payload="{}")
+                      amount_rub=price, currency="RUB",
+                      payload=json.dumps({"delete": delete_after}))
     session.add(payment)
     await session.flush()
 
@@ -369,7 +376,7 @@ async def start_unbind_payment(session: AsyncSession, user: User, device: Device
             raise BillingError(f"CryptoBot отклонил счёт: {data.get('error')}")
         payment.external_id = str(data["result"]["invoice_id"])
         url = data["result"]["bot_invoice_url"]
-        payment.payload = json.dumps({"url": url})
+        payment.payload = json.dumps({"url": url, "delete": delete_after})
         await session.commit()
         return payment, url
 
@@ -383,7 +390,7 @@ async def start_unbind_payment(session: AsyncSession, user: User, device: Device
                                                user_id=settings.lzt_user_id,
                                                amount=amount, comment=payment.external_id)
         payment.payload = json.dumps({"url": url, "comment": payment.external_id,
-                                      "amount": amount})
+                                      "amount": amount, "delete": delete_after})
         await session.commit()
         return payment, url
 
@@ -401,11 +408,21 @@ async def complete_payment(session: AsyncSession, payment: Payment) -> None:
             Device.id == payment.device_id))).scalar_one_or_none()
         if device is None:
             raise BillingError("Устройство не найдено")
+        meta = json.loads(payment.payload or "{}")
+        name = device.name
         await hwid_service.unbind(session, device)
         payment.status = PaymentStatus.paid
         payment.paid_at = utcnow()
+        if meta.get("delete"):
+            # Слот освобождается целиком: ключ отзывается, устройство исчезает из списка.
+            payment.device_id = None
+            await notify(session, user.tg_id,
+                         f"🗑 Устройство «{name}» удалено, слот освободился. "
+                         "Добавьте новое устройство в мини-аппе.")
+            await remove_device(session, user, device.id)  # внутри делает commit
+            return
         await notify(session, user.tg_id,
-                     f"🔓 Устройство «{device.name}» отвязано. Откройте приложение "
+                     f"🔓 Устройство «{name}» отвязано. Откройте приложение "
                      "TargetVPN на новом телефоне и введите код привязки из мини-аппа.")
         await session.commit()
         return

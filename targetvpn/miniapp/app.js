@@ -507,7 +507,7 @@ function openDeviceSheet(deviceId) {
         <p class="muted" style="margin:6px 0 0;font-size:12.5px">
           HWID ${esc(device.hwid)}${device.client_model ? ' · ' + esc(device.client_model) : ''}
           ${device.app_version ? ' · v' + esc(device.app_version) : ''}<br>
-          Чтобы пересесть на другой телефон, нужна отвязка — ${state.unbindPrice} ₽.</p>
+          Устройство занято этим телефоном. Отвязка или удаление — ${state.unbindPrice} ₽.</p>
         <button class="btn btn-ghost wide btn-sm" style="margin-top:10px" data-act="unbind">
           🔓 Отвязать устройство · ${state.unbindPrice} ₽</button>
       </div>` : ''}
@@ -518,7 +518,10 @@ function openDeviceSheet(deviceId) {
       <button class="btn btn-ghost wide" data-act="region">🌍 Сменить локацию</button>
       <div class="row">
         <button class="btn btn-ghost btn-sm" data-act="refresh">♻️ Перевыпустить</button>
-        <button class="btn btn-danger btn-sm" data-act="delete">🗑 Удалить</button>
+        ${device.hwid_bound
+          ? `<button class="btn btn-danger btn-sm" data-act="paid-delete">🗑 Удалить · ${
+              state.unbindPrice} ₽</button>`
+          : '<button class="btn btn-danger btn-sm" data-act="delete">🗑 Удалить</button>'}
       </div>
     </div>`);
 
@@ -542,7 +545,8 @@ function openDeviceSheet(deviceId) {
       } catch (err) { toast(err.message); btn.disabled = false; }
       return;
     }
-    if (act === 'unbind') return openUnbind(device);
+    if (act === 'unbind') return openUnbind(device, { remove: false });
+    if (act === 'paid-delete') return openUnbind(device, { remove: true });
     if (act === 'region') return openRegionPicker(device);
     if (act === 'delete') {
       if (!confirm('Удалить устройство и отозвать его ключ?')) return;
@@ -655,13 +659,18 @@ async function openRegionPicker(device) {
     }));
 }
 
-function openUnbind(device) {
+function openUnbind(device, opts = {}) {
+  const remove = Boolean(opts.remove);
   const methods = state.methods.length ? state.methods : ['stars'];
   openSheet(`
-    <div class="sheet-title">Отвязать устройство</div>
+    <div class="sheet-title">${remove ? 'Удалить устройство' : 'Отвязать устройство'}</div>
     <p class="muted" style="margin-top:-6px;font-size:13px">
-      «${esc(device.name)}» перестанет подключаться, и приложение можно будет привязать
-      к другому телефону новым кодом. Стоимость — <b>${state.unbindPrice} ₽</b>.</p>
+      ${remove
+        ? `«${esc(device.name)}» и его ключ будут удалены, слот в подписке освободится.`
+        : `«${esc(device.name)}» перестанет подключаться, и приложение можно будет привязать
+           к другому телефону новым кодом.`}
+      Устройство привязано к телефону, поэтому действие платное —
+      <b>${state.unbindPrice} ₽</b>.</p>
     <div class="stack" style="margin-top:14px">
       ${methods.map((m, i) => `<button class="btn ${i === 0 ? 'btn-primary' : 'btn-ghost'} wide"
         data-unbind="${m}">${PAY_LABELS[m] || m}</button>`).join('')}
@@ -674,32 +683,42 @@ function openUnbind(device) {
       btn.textContent = 'Готовим счёт…';
       try {
         const res = await api('/api/unbind', {
-          method: 'POST', body: { device_id: device.id, method },
+          method: 'POST', body: { device_id: device.id, method, delete: remove },
         });
         closeSheet();
+        if (res.activated) {
+          haptic('medium');
+          toast(remove ? 'Устройство удалено' : 'Устройство отвязано');
+          await refresh();
+          return;
+        }
         if ((method === 'stars' || method === 'card') && res.invoice_link) {
           tg?.openInvoice?.(res.invoice_link, (status) => {
-            if (status === 'paid') { toast('Оплачено, отвязываем…'); pollUnbind(res.payment_id); }
+            if (status === 'paid') {
+              toast(remove ? 'Оплачено, удаляем…' : 'Оплачено, отвязываем…');
+              pollUnbind(res.payment_id, 20, remove);
+            }
           });
         } else if (method === 'lzt') {
           openLztInstructions(res);
-          pollUnbind(res.payment_id, 60);
+          pollUnbind(res.payment_id, 60, remove);
         } else if (res.invoice_url) {
           tg?.openTelegramLink?.(res.invoice_url) || window.open(res.invoice_url, '_blank');
-          pollUnbind(res.payment_id, 40);
+          pollUnbind(res.payment_id, 40, remove);
         }
       } catch (err) { toast(err.message); btn.disabled = false; }
     }));
 }
 
-async function pollUnbind(paymentId, attempts = 20) {
+async function pollUnbind(paymentId, attempts = 20, removed = false) {
   for (let i = 0; i < attempts; i += 1) {
     await new Promise((r) => setTimeout(r, 3000));
     try {
       const res = await api(`/api/payments/${paymentId}`);
       if (res.paid) {
         haptic('medium');
-        toast('Устройство отвязано — привяжите приложение новым кодом');
+        toast(removed ? 'Устройство удалено, слот освободился'
+          : 'Устройство отвязано — привяжите приложение новым кодом');
         await refresh();
         return;
       }

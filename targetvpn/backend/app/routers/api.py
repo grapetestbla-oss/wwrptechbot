@@ -183,6 +183,16 @@ async def create_device(payload: DeviceCreate, user: User = Depends(current_user
 @router.delete("/devices/{device_id}")
 async def delete_device(device_id: int, user: User = Depends(current_user),
                         session: AsyncSession = Depends(get_session)):
+    device = (await session.execute(select(Device).where(
+        Device.id == device_id, Device.user_id == user.id))).scalar_one_or_none()
+    if device is None:
+        raise HTTPException(404, "Устройство не найдено")
+    if device.hwid:
+        # Иначе удаление было бы бесплатным обходом платной отвязки HWID.
+        price = await settings_store.get_float(session, "unbind_price_rub", 50.0)
+        raise HTTPException(
+            400, f"Устройство привязано к приложению. Освобождение стоит {price:.0f} ₽ — "
+                 "оплатите его в карточке устройства.")
     try:
         await subs.remove_device(session, user, device_id)
     except ValueError as exc:
@@ -221,7 +231,7 @@ async def bind_code(user: User = Depends(current_user),
 @router.post("/unbind", response_model=PurchaseResponse)
 async def unbind(payload: UnbindRequest, user: User = Depends(current_user),
                  session: AsyncSession = Depends(get_session)):
-    """Платная отвязка HWID — чтобы пересесть на другой телефон."""
+    """Платное освобождение устройства: снятие HWID, при delete=true — с удалением."""
     device = (await session.execute(select(Device).where(
         Device.id == payload.device_id, Device.user_id == user.id))).scalar_one_or_none()
     if device is None:
@@ -230,10 +240,12 @@ async def unbind(payload: UnbindRequest, user: User = Depends(current_user),
         raise HTTPException(400, "Это устройство не привязано к приложению")
     if payload.method == "balance":
         price = await settings_store.get_float(session, "unbind_price_rub", 50.0)
+        reason = "Удаление устройства" if payload.delete else "Отвязка устройства"
         try:
-            payment = await billing.pay_from_balance(session, user, price, "Отвязка устройства")
+            payment = await billing.pay_from_balance(session, user, price, reason)
             payment.kind = PaymentKind.unbind
             payment.device_id = device.id
+            payment.payload = json.dumps({"delete": payload.delete})
             await billing.complete_payment(session, payment)
         except billing.BillingError as exc:
             raise HTTPException(400, str(exc))
@@ -241,7 +253,8 @@ async def unbind(payload: UnbindRequest, user: User = Depends(current_user),
                                 amount_native=price, currency="RUB", activated=True)
 
     try:
-        payment, url = await billing.start_unbind_payment(session, user, device, payload.method)
+        payment, url = await billing.start_unbind_payment(
+            session, user, device, payload.method, delete_after=payload.delete)
     except billing.BillingError as exc:
         raise HTTPException(400, str(exc))
     meta = json.loads(payment.payload or "{}")
