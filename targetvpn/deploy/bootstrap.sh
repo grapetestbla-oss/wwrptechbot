@@ -22,6 +22,16 @@ warn() { printf "\033[1;33m!! %s\033[0m\n" "$*"; }
 die()  { printf "\033[1;31mОшибка: %s\033[0m\n" "$*" >&2; exit 1; }
 
 [[ $EUID -eq 0 ]] || die "запустите от root"
+
+# Обновление уже установленного сервиса: домен и токен берём из его .env,
+# заново передавать переменные не нужно.
+INSTALLED_ENV=/opt/targetvpn/.env
+if [[ -f "$INSTALLED_ENV" ]]; then
+  : "${TVPN_DOMAIN:=$(sed -n 's#^PUBLIC_BASE_URL=https\?://##p' "$INSTALLED_ENV" | tr -d '\r')}"
+  : "${TVPN_BOT_TOKEN:=$(sed -n 's/^BOT_TOKEN=//p' "$INSTALLED_ENV" | tr -d '\r')}"
+  [[ -n "$TVPN_DOMAIN" ]] && say "Обновляем установку ($TVPN_DOMAIN)"
+fi
+
 [[ -n "${TVPN_DOMAIN:-}" ]] || die "не задан TVPN_DOMAIN"
 [[ -n "${TVPN_BOT_TOKEN:-}" ]] || die "не задан TVPN_BOT_TOKEN"
 
