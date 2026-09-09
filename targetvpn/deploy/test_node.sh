@@ -16,12 +16,28 @@ ok()   { printf "\033[1;32m✅ %s\033[0m\n" "$*"; }
 bad()  { printf "\033[1;31m❌ %s\033[0m\n" "$*"; }
 warn() { printf "\033[1;33m!! %s\033[0m\n" "$*"; }
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 KEY=${1:-}
 if [[ -z "$KEY" && -x "$APP_DIR/.venv/bin/python" ]]; then
   say "Берём ключ из базы TargetVPN"
-  KEY=$(cd "$APP_DIR" && "$APP_DIR/.venv/bin/python" scripts/print_key.py "$OWNER_ID" 2>/dev/null | tail -1)
+  # Запускаем из каталога сервиса (там .env и база), но скрипт берём из этого
+  # клона: в /opt/targetvpn может лежать сборка постарше.
+  for candidate in "$SCRIPT_DIR/../scripts/print_key.py" "$APP_DIR/scripts/print_key.py"; do
+    [[ -f "$candidate" ]] || continue
+    KEY=$(cd "$APP_DIR" && "$APP_DIR/.venv/bin/python" "$candidate" "$OWNER_ID" 2>&1 | tail -1)
+    [[ "$KEY" == vless://* ]] && break
+    warn "Не вышло получить ключ: $KEY"
+    KEY=""
+  done
 fi
-[[ -n "$KEY" ]] || { bad "Ключ не найден. Передайте его аргументом."; exit 1; }
+
+if [[ -z "$KEY" ]]; then
+  bad "Ключ не найден."
+  warn "Скопируйте его в мини-аппе (Устройства → Ключ → «Скопировать ключ») и запустите:"
+  warn "  bash deploy/test_node.sh 'vless://…'"
+  exit 1
+fi
 echo "Ключ: ${KEY:0:60}…"
 
 CONTAINER=$(docker ps --format '{{.Names}}' | grep -m1 marzban || true)
