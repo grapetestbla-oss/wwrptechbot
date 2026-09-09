@@ -58,11 +58,24 @@ EXTRA_NAMES = {"Makefile"}
 SKIP_TOP_DIRS = {".git", "build", ".dart_tool", "core"}
 SKIP_FILES = {"LICENSE", "LICENSE.md", "NOTICE"}
 
-# Flutter из stable проверяет минимумы версий сборочной цепочки, а форк везёт
-# Gradle 8.11.1 и AGP 8.9.2 — оба ниже порога. Пара 8.14.3 + 8.11.1 согласована:
-# AGP 8.11 требует Gradle не ниже 8.13.
+# Flutter из stable проверяет три минимума сразу — Gradle, AGP и Kotlin (это
+# ровно то, что снимает флаг --android-skip-build-dependency-validation).
+# Форк везёт Gradle 8.11.1, AGP 8.9.2 и Kotlin 2.2.0 — ниже порога все три,
+# и сборка спотыкалась о следующий, едва поднимешь предыдущий. Версии
+# согласованы между собой: AGP 8.11 требует Gradle не ниже 8.13.
 GRADLE_VERSION = "8.14.3"
 AGP_VERSION = "8.11.1"
+KOTLIN_VERSION = "2.2.20"
+
+# id плагина в блоке plugins -> версия, до которой поднимаем.
+PLUGIN_VERSIONS = {
+    "com.android.application": AGP_VERSION,
+    "com.android.library": AGP_VERSION,
+    "org.jetbrains.kotlin.android": KOTLIN_VERSION,
+    "org.jetbrains.kotlin.plugin.parcelize": KOTLIN_VERSION,
+    "org.jetbrains.kotlin.plugin.compose": KOTLIN_VERSION,
+    "org.jetbrains.kotlin.plugin.serialization": KOTLIN_VERSION,
+}
 
 
 def skipped(work: Path, path: Path) -> bool:
@@ -127,13 +140,19 @@ def bump_gradle(work: Path) -> list[str]:
         if not path.is_file():
             continue
         text = path.read_text(encoding="utf-8")
-        patched = re.sub(r'(id\("com\.android\.application"\) version ")[\d.]+(")',
-                         rf'\g<1>{AGP_VERSION}\g<2>', text)
-        patched = re.sub(r'(com\.android\.tools\.build:gradle:)[\d.]+',
-                         rf'\g<1>{AGP_VERSION}', patched)
+        patched = text
+        for plugin, version in PLUGIN_VERSIONS.items():
+            # id("plugin") version "X" и id 'plugin' version 'X'
+            pattern = (r"""(id\s*\(?\s*['"]""" + re.escape(plugin)
+                       + r"""['"]\s*\)?\s+version\s+['"])[\d.]+(['"])""")
+            patched = re.sub(pattern, r"\g<1>" + version + r"\g<2>", patched)
+        patched = re.sub(r"(com\.android\.tools\.build:gradle:)[\d.]+",
+                         r"\g<1>" + AGP_VERSION, patched)
+        patched = re.sub(r"""(ext\.kotlin_version\s*=\s*['"])[\d.]+(['"])""",
+                         r"\g<1>" + KOTLIN_VERSION + r"\g<2>", patched)
         if patched != text:
             path.write_text(patched, encoding="utf-8")
-            done.append(f"AGP {AGP_VERSION} ({name})")
+            done.append(f"AGP {AGP_VERSION} / Kotlin {KOTLIN_VERSION} ({name})")
     return done
 
 
