@@ -12,6 +12,7 @@
 | `com.follow.clashx`, `com.follow.clash` | `us.targetvpn.app` |
 | `FlClashX`, `FlClash` | `TargetVPN` |
 | `flclashx`, `flclash`, `fl_clash` | `targetvpn` |
+| каталоги `com/follow/clashx/` | `us/targetvpn/app/` |
 | иконки приложения | `miniapp/logo.png` |
 
 Запуск локально:
@@ -44,6 +45,10 @@ GitHub Actions: **Actions → «Build TargetVPN client (FlClashX)» → Run work
 Flutter проверяет все три порога подряд, поэтому поднимать их надо вместе:
 подняв один, упрёшься в следующий. Версии согласованы между собой — AGP 8.11
 требует Gradle не ниже 8.13.
+
+Каталоги исходников переносятся не для красоты: Kotlin разрешает файлам лежать
+где угодно, а компилятор AIDL требует, чтобы путь совпадал с объявленным
+`package`, иначе падает с «should be declared in a file called …».
 
 ## macOS
 

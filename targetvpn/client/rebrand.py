@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -156,6 +157,34 @@ def bump_gradle(work: Path) -> list[str]:
     return done
 
 
+def move_packages(work: Path) -> int:
+    """Переносит исходники в каталог нового пакета.
+
+    Kotlin разрешает любое расположение файлов, а компилятор AIDL — нет: он
+    требует, чтобы путь совпадал с объявленным package, иначе падает с
+    «should be declared in a file called ...». Поэтому com/follow/clashx
+    переезжает в us/targetvpn/app во всех наборах исходников.
+    """
+    parts = PACKAGE_ID.split(".")
+    moved = 0
+    for old in ("clashx", "clash"):
+        for src in sorted(work.rglob(f"com/follow/{old}")):
+            if not src.is_dir() or skipped(work, src):
+                continue
+            root = src.parent.parent.parent  # каталог, в котором лежит com/
+            dest = root.joinpath(*parts)
+            dest.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(src, dest, dirs_exist_ok=True)
+            shutil.rmtree(src)
+            moved += 1
+    # Убираем опустевшие com/follow и com.
+    for name in ("com/follow", "com"):
+        for leftover in sorted(work.rglob(name), key=lambda p: -len(p.parts)):
+            if leftover.is_dir() and not skipped(work, leftover) and not any(leftover.iterdir()):
+                leftover.rmdir()
+    return moved
+
+
 def replace_icons(work: Path) -> int:
     """Кладёт наш логотип вместо иконок форка."""
     source = ROOT / "miniapp" / "logo.png"
@@ -206,8 +235,11 @@ def find_leftovers(work: Path) -> list[str]:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
+        rel = path.relative_to(work)
         if any(marker in text for marker in MARKERS):
-            found.append(str(path.relative_to(work)))
+            found.append(str(rel))
+        elif "com/follow" in rel.as_posix():
+            found.append(f"{rel} (старый путь пакета)")
     return found
 
 
@@ -241,6 +273,7 @@ def main() -> None:
     work = Path(args.work).resolve()
     clone(work, args.ref)
     files = patch_text(work)
+    moved = move_packages(work)
     gradle = bump_gradle(work)
     icons = replace_icons(work)
     write_notice(work, args.ref)
@@ -249,6 +282,7 @@ def main() -> None:
     print(f"Готово: {work}")
     print(f"  файлов изменено: {files}")
     print(f"  иконок заменено: {icons}")
+    print(f"  каталогов пакета перенесено: {moved}")
     for item in gradle:
         print(f"  поднято: {item}")
     if leftovers:
