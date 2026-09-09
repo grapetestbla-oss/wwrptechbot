@@ -309,6 +309,7 @@ async function checkPromo() {
 
 const PAY_LABELS = {
   balance: '💰 С баланса',
+  card: '💳 Банковской картой',
   stars: '⭐️ Telegram Stars',
   cryptobot: '💎 Криптой (USDT/TON)',
   lzt: '🐝 Переводом на LZT Market',
@@ -343,7 +344,7 @@ async function pay(plan, method, btn) {
       body: { plan_id: plan.id, method, promo_code: state.promo?.code || '' },
     });
     closeSheet();
-    if (method === 'stars' && res.invoice_link) {
+    if ((method === 'stars' || method === 'card') && res.invoice_link) {
       tg?.openInvoice?.(res.invoice_link, (status) => {
         if (status === 'paid') { toast('Оплата прошла, активируем подписку…'); pollPayment(res.payment_id); }
         else if (status === 'failed') toast('Платёж не прошёл');
@@ -676,7 +677,7 @@ function openUnbind(device) {
           method: 'POST', body: { device_id: device.id, method },
         });
         closeSheet();
-        if (method === 'stars' && res.invoice_link) {
+        if ((method === 'stars' || method === 'card') && res.invoice_link) {
           tg?.openInvoice?.(res.invoice_link, (status) => {
             if (status === 'paid') { toast('Оплачено, отвязываем…'); pollUnbind(res.payment_id); }
           });

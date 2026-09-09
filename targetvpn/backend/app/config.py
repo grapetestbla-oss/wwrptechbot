@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     demo_mode: bool = Field(default=False, alias="DEMO_MODE")
 
     # --- Платежи ---
+    # Токен провайдера Telegram Payments (Smart Glocal и другие банки).
+    # Метка :TEST: в токене означает тестовый режим: деньги не списываются.
+    payment_provider_token: str = Field(default="", alias="PAYMENT_PROVIDER_TOKEN")
+    payment_currency: str = Field(default="RUB", alias="PAYMENT_CURRENCY")
     cryptobot_token: str = Field(default="", alias="CRYPTOBOT_TOKEN")
     cryptobot_api: str = Field(default="https://pay.crypt.bot/api", alias="CRYPTOBOT_API")
     cryptobot_asset: str = Field(default="USDT", alias="CRYPTOBOT_ASSET")

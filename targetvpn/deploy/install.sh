@@ -155,6 +155,16 @@ sed -i "s|^API_BASE_URL=.*|API_BASE_URL=http://127.0.0.1:${API_PORT}|" .env
 # systemd читает .env как список переменных: значение с пробелами обязано быть в кавычках.
 sed -i "s|^MARZBAN_INBOUNDS=\({.*}\)$|MARZBAN_INBOUNDS='\1'|" .env
 
+# Токен платёжного провайдера можно передать при обновлении: TVPN_PROVIDER_TOKEN=...
+if [[ -n "${TVPN_PROVIDER_TOKEN:-}" ]]; then
+  if grep -q '^PAYMENT_PROVIDER_TOKEN=' .env; then
+    sed -i "s|^PAYMENT_PROVIDER_TOKEN=.*|PAYMENT_PROVIDER_TOKEN=${TVPN_PROVIDER_TOKEN}|" .env
+  else
+    printf 'PAYMENT_PROVIDER_TOKEN=%s\nPAYMENT_CURRENCY=RUB\n' "$TVPN_PROVIDER_TOKEN" >> .env
+  fi
+  say "Оплата картой подключена"
+fi
+
 for conf in /etc/nginx/sites-available/targetvpn /etc/caddy/conf.d/targetvpn.caddy; do
   if [[ -f "$conf" ]]; then
     sed -i -E "s|(127\.0\.0\.1):[0-9]+|\1:${API_PORT}|g" "$conf"

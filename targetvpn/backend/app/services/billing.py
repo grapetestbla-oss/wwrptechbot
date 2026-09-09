@@ -112,6 +112,44 @@ def verify_cryptobot_signature(body: bytes, signature: str) -> bool:
     return hmac.compare_digest(calculated, signature)
 
 
+# --- Карта через Telegram Payments (Smart Glocal) ---
+
+def card_enabled() -> bool:
+    return bool(settings.bot_token and settings.payment_provider_token)
+
+
+def card_amount(price_rub: float) -> int:
+    """Telegram принимает сумму в копейках."""
+    return max(1, int(round(price_rub * 100)))
+
+
+def card_is_test() -> bool:
+    return ":TEST:" in settings.payment_provider_token
+
+
+async def card_create_invoice_link(title: str, description: str, price_rub: float,
+                                   payment_id: int) -> str:
+    if not card_enabled():
+        raise BillingError("Оплата картой временно недоступна")
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        resp = await client.post(
+            f"https://api.telegram.org/bot{settings.bot_token}/createInvoiceLink",
+            json={
+                "title": title[:32],
+                "description": description[:255],
+                "payload": f"tvpn:{payment_id}",
+                "provider_token": settings.payment_provider_token,
+                "currency": settings.payment_currency,
+                "prices": [{"label": title[:32], "amount": card_amount(price_rub)}],
+            },
+        )
+    data = resp.json()
+    if not data.get("ok"):
+        raise BillingError(f"Банк отклонил счёт: {data.get('description')}")
+    return data["result"]
+
+
 # --- Telegram Stars ---
 
 async def stars_create_invoice_link(user: User, plan: Plan, price_rub: float,
@@ -305,6 +343,15 @@ async def start_unbind_payment(session: AsyncSession, user: User, device: Device
         payment.external_id = data["result"]
         await session.commit()
         return payment, data["result"]
+
+    if method == "card":
+        amount = card_amount(price)
+        payment.amount_native, payment.currency = amount / 100, settings.payment_currency
+        link = await card_create_invoice_link(
+            title, f"Смена устройства для «{device.name}»", price, payment.id)
+        payment.external_id = link
+        await session.commit()
+        return payment, link
 
     if method == "cryptobot":
         if not settings.cryptobot_token:

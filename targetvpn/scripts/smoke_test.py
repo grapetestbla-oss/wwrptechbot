@@ -434,6 +434,42 @@ async def main() -> None:
             r = await c.post("/api/admin/settings", headers=auth, json={"apk_url": "http://x"})
             check("настройки закрыты от обычных юзеров", r.status_code == 403)
 
+            # --- оплата картой через Telegram Payments ---
+            check("сумма в копейках", _billing.card_amount(149) == 14900,
+                  str(_billing.card_amount(149)))
+            check("тестовый токен распознаётся",
+                  not _billing.card_enabled(), "без токена оплата картой выключена")
+
+            r = await c.post("/api/purchase", headers=auth,
+                             json={"plan_id": new_plan_id, "method": "card"})
+            check("без токена провайдера оплата картой отклонена", r.status_code == 400,
+                  r.text[:120])
+
+            _cfg.payment_provider_token = "1877036958:TEST:xxxxxxxx"
+            check("режим теста виден по метке", _billing.card_is_test())
+            _billing.card_create_invoice_link = lambda *a, **kw: _as_coro(
+                "https://t.me/invoice/test123")
+            r = await c.get("/api/state", headers=auth)
+            check("карта появилась в способах оплаты",
+                  "card" in r.json()["payment_methods"], str(r.json()["payment_methods"]))
+
+            r = await c.post("/api/purchase", headers=auth,
+                             json={"plan_id": new_plan_id, "method": "card"})
+            check("счёт картой создан",
+                  r.status_code == 200 and r.json()["invoice_link"].startswith("https://t.me/"),
+                  r.text[:150])
+            card_payment = r.json()["payment_id"]
+
+            # Бот подтверждает оплату так же, как для звёзд.
+            r = await c.post("/internal/payments/stars",
+                             headers={"X-Internal-Secret": "smoke-secret"},
+                             json={"payment_id": card_payment, "charge_id": "test-charge"})
+            check("подтверждение платежа картой активирует подписку", r.status_code == 200,
+                  r.text[:120])
+            r = await c.get(f"/api/payments/{card_payment}", headers=auth)
+            check("платёж картой помечен оплаченным", r.json()["paid"])
+            _cfg.payment_provider_token = ""
+
             # --- баланс: начисление админом и оплата с него ---
             r = await c.post("/api/admin/balance", headers=oauth,
                              json={"tg_id": 555001, "amount": 300, "reason": "бонус"})

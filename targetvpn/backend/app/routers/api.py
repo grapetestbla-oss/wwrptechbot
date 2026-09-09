@@ -54,6 +54,8 @@ def available_payment_methods(balance: float = 0.0) -> list[str]:
     methods = ["balance"] if balance > 0 else []
     if settings.bot_token:
         methods.append("stars")
+    if billing.card_enabled():
+        methods.append("card")
     if settings.cryptobot_token:
         methods.append("cryptobot")
     if billing.lzt_enabled():
@@ -335,6 +337,26 @@ async def purchase(payload: PurchaseRequest, user: User = Depends(current_user),
                                 invoice_url=meta.get("url", ""), amount_rub=price,
                                 amount_native=payment.amount_native, currency="RUB",
                                 comment=meta.get("comment", ""))
+
+    if payload.method == "card":
+        payment = Payment(user_id=user.id, plan_id=plan.id, provider="card",
+                          amount_rub=price, amount_native=price,
+                          currency=settings.payment_currency,
+                          payload=json.dumps({"promo": promo_code}))
+        session.add(payment)
+        await session.flush()
+        try:
+            link = await billing.card_create_invoice_link(
+                f"TargetVPN · {plan.title}",
+                plan.description or f"Подписка на {plan.duration_hours // 24} дн.",
+                price, payment.id)
+        except billing.BillingError as exc:
+            raise HTTPException(400, str(exc))
+        payment.external_id = link
+        await session.commit()
+        return PurchaseResponse(payment_id=payment.id, method="card", invoice_link=link,
+                                amount_rub=price, amount_native=price,
+                                currency=settings.payment_currency)
 
     if payload.method == "stars":
         payment = Payment(user_id=user.id, plan_id=plan.id, provider="stars",
