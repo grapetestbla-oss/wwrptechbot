@@ -22,6 +22,27 @@ log = logging.getLogger("bot")
 
 router = Router()
 
+# Системы в порядке популярности; iOS обслуживается через Happ, остальные — клиентом.
+OS_CHOICES = [
+    ("android", "🤖", "Android"),
+    ("ios", "🍏", "iPhone / iPad"),
+    ("windows", "🪟", "Windows"),
+    ("linux", "🐧", "Linux"),
+    ("macos", "💻", "macOS"),
+]
+
+HAPP_LINKS = [
+    ("App Store", "https://apps.apple.com/app/happ-proxy-utility/id6504287215"),
+    ("Сайт Happ", "https://www.happ.su/"),
+]
+
+INSTALL_HINTS = {
+    "android": "Скачайте .apk и разрешите установку из этого источника.",
+    "windows": "Запустите .exe — при первом подключении Windows спросит разрешение на VPN.",
+    "linux": "Сделайте файл исполняемым: <code>chmod +x TargetVPN.AppImage</code>.",
+    "macos": "Откройте .dmg и перетащите TargetVPN в «Программы».",
+}
+
 WELCOME = (
     "<b>TargetVPN</b> — быстрый доступ в интернет без блокировок.\n\n"
     "• Протокол VLESS Reality — трафик неотличим от обычного HTTPS\n"
@@ -35,7 +56,7 @@ WELCOME = (
 def main_kb() -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(text="🚀 Открыть TargetVPN",
                                   web_app=WebAppInfo(url=settings.webapp_url))],
-            [InlineKeyboardButton(text="📥 Скачать приложение",
+            [InlineKeyboardButton(text="📥 Скачать / подключиться",
                                   callback_data="downloads")]]
     if settings.support_url:
         rows.append([InlineKeyboardButton(text="💬 Поддержка", url=settings.support_url)])
@@ -64,29 +85,59 @@ async def open_app(message: Message):
 
 @router.message(Command("download", "install"))
 async def download(message: Message):
-    """Кнопки со ссылками на все выложенные сборки (Android, iOS, ПК)."""
+    """Первый шаг: выбор системы — от неё зависит и клиент, и способ подключения."""
+    rows = [[InlineKeyboardButton(text=f"{emoji} {title}", callback_data=f"dl:{os_id}")]
+            for os_id, emoji, title in OS_CHOICES]
+    rows.append([InlineKeyboardButton(text="🚀 Открыть TargetVPN",
+                                      web_app=WebAppInfo(url=settings.webapp_url))])
+    await message.answer(
+        "<b>Какая у вас система?</b>\n\n"
+        "На Android, Windows и Linux ставится наш клиент TargetVPN, "
+        "на iPhone подключаемся через Happ — Apple не пропускает наш клиент в App Store.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+async def send_ios(message: Message) -> None:
+    rows = [[InlineKeyboardButton(text=f"⬇️ Установить Happ · {title}", url=url)]
+            for title, url in HAPP_LINKS]
+    rows.append([InlineKeyboardButton(text="🚀 Подключить в приложении",
+                                      web_app=WebAppInfo(url=settings.webapp_url))])
+    await message.answer(
+        "<b>🍏 iPhone и iPad</b>\n\n"
+        "Apple не пропускает наш клиент в App Store, поэтому подключаемся через "
+        "<b>Happ</b> — бесплатное приложение.\n\n"
+        "1. Установите Happ по кнопке ниже\n"
+        "2. Откройте TargetVPN и нажмите «Подключить через Happ» — ключ добавится сам",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+async def send_build(message: Message, os_id: str) -> None:
     try:
         builds = await internal("GET", "/internal/downloads") or []
     except Exception:  # noqa: BLE001 - бэкенд мог перезапускаться
         log.exception("Не удалось получить ссылки на сборки")
         builds = []
 
-    if not builds:
+    build = next((b for b in builds if b["platform"] == os_id), None)
+    title = dict((o[0], o[2]) for o in OS_CHOICES).get(os_id, os_id)
+    if build is None:
         return await message.answer(
-            "Сборки приложения ещё не выложены.\n"
+            f"Сборка для {title} ещё не выложена.\n"
             "Пока подключайтесь по ключу из мини-аппа — он работает "
-            "в v2rayNG, Hiddify и Streisand.",
+            "в Happ, v2rayNG и Hiddify.",
             reply_markup=main_kb())
 
     rows = [[InlineKeyboardButton(
-        text=f"{b['emoji']} {b['title']}" + (f" · {b['version']}" if b.get("version") else ""),
-        url=b["url"])] for b in builds]
-    rows.append([InlineKeyboardButton(text="🚀 Открыть TargetVPN",
-                                      web_app=WebAppInfo(url=settings.webapp_url))])
+        text=f"{build['emoji']} Скачать TargetVPN"
+             + (f" · {build['version']}" if build.get("version") else ""),
+        url=build["url"])],
+        [InlineKeyboardButton(text="🚀 Открыть TargetVPN",
+                              web_app=WebAppInfo(url=settings.webapp_url))]]
     await message.answer(
-        "<b>Скачать приложение TargetVPN</b>\n\n"
-        "После установки откройте мини-приложение, нажмите «Показать код привязки» "
-        "и введите код в приложении — подписка закрепится за этим устройством.",
+        f"<b>{build['emoji']} {title}</b>\n\n"
+        f"{INSTALL_HINTS.get(os_id, '')}\n\n"
+        "После установки откройте мини-приложение, скопируйте ссылку-подписку "
+        "и вставьте её в клиент — дальше только кнопка подключения.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 
@@ -95,7 +146,7 @@ async def help_cmd(message: Message):
     await message.answer(
         "Всё управление — в мини-приложении: тарифы, оплата, ключи, устройства.\n"
         "Если ключ перестал работать — нажмите «Перевыпустить» у устройства.\n"
-        "Скачать приложение: /download\n"
+        "Скачать клиент под свою систему: /download\n"
         f"Поддержка: {settings.support_url or 'скоро'}",
         reply_markup=main_kb())
 
@@ -120,6 +171,15 @@ async def admin_cmd(message: Message):
 async def downloads_callback(query):
     await query.answer()
     await download(query.message)
+
+
+@router.callback_query(F.data.startswith("dl:"))
+async def download_os(query):
+    await query.answer()
+    os_id = query.data.split(":", 1)[1]
+    if os_id == "ios":
+        return await send_ios(query.message)
+    await send_build(query.message, os_id)
 
 
 # --- Оплата звёздами ---

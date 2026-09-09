@@ -5,7 +5,7 @@ const API = (location.origin.includes('localhost') || location.origin.startsWith
 
 const state = { token: '', user: null, sub: null, devices: [], plans: [], nodes: [], subUrl: '',
                 trialAvailable: false, nodesReady: true, supportUrl: '', methods: [],
-                downloads: [], unbindPrice: 50, promo: null, timer: null,
+                downloads: [], unbindPrice: 50, promo: null, timer: null, os: '',
                 bindTimer: null };
 
 const $ = (sel) => document.querySelector(sel);
@@ -562,31 +562,128 @@ function openDeviceSheet(deviceId) {
 
 /* ---------- Приложение TargetVPN ---------- */
 
+/* Выбор системы: на iPhone Apple не пускает наш клиент, там подключаемся
+   через Happ; на остальных системах ставится сам TargetVPN. */
+const OS_LIST = [
+  { id: 'android', emoji: '🤖', title: 'Android', via: 'app' },
+  { id: 'ios', emoji: '🍏', title: 'iPhone', via: 'happ' },
+  { id: 'windows', emoji: '🪟', title: 'Windows', via: 'app' },
+  { id: 'linux', emoji: '🐧', title: 'Linux', via: 'app' },
+  { id: 'macos', emoji: '💻', title: 'macOS', via: 'app' },
+];
+
+const HAPP_STORES = [
+  { title: 'App Store', url: 'https://apps.apple.com/app/happ-proxy-utility/id6504287215' },
+  { title: 'Сайт Happ', url: 'https://www.happ.su/' },
+];
+
+function detectOs() {
+  const ua = (navigator.userAgent || '').toLowerCase();
+  const plat = (navigator.platform || '').toLowerCase();
+  if (/iphone|ipad|ipod/.test(ua) || (plat.startsWith('mac') && navigator.maxTouchPoints > 1)) return 'ios';
+  if (/android/.test(ua)) return 'android';
+  if (/win/.test(ua) || plat.startsWith('win')) return 'windows';
+  if (/mac/.test(ua) || plat.startsWith('mac')) return 'macos';
+  if (/linux|x11|cros/.test(ua)) return 'linux';
+  return 'android';
+}
+
+function currentOs() {
+  if (state.os) return state.os;
+  let saved = '';
+  try { saved = localStorage.getItem('tvpn_os') || ''; } catch (_) {}
+  state.os = OS_LIST.some((o) => o.id === saved) ? saved : detectOs();
+  return state.os;
+}
+
+function setOs(id) {
+  state.os = id;
+  try { localStorage.setItem('tvpn_os', id); } catch (_) {}
+  renderAppCard();
+}
+
+/* Ссылка-подписка для клиента на ядре mihomo — ему нужен Clash-формат. */
+const clashSubUrl = () => (state.subUrl ? `${state.subUrl}?format=clash` : '');
+
+function osPanel(os) {
+  const build = state.downloads.find((d) => d.platform === os);
+
+  if (os === 'ios') {
+    return `
+      <p class="muted" style="margin:0 0 12px;font-size:13px">
+        Apple не пропускает наш клиент в App Store, поэтому на iPhone подключаемся
+        через <b>Happ</b> — бесплатное приложение, ключ уходит в него одним тапом.</p>
+      <div class="stack">
+        <button class="btn btn-primary wide" data-act="happ-connect">🚀 Подключить через Happ</button>
+        ${HAPP_STORES.map((h) => `<button class="btn btn-ghost wide"
+          data-open="${esc(h.url)}">⬇️ Установить Happ · ${esc(h.title)}</button>`).join('')}
+        <button class="btn btn-ghost wide" data-act="copy-sub">📋 Скопировать ссылку-подписку</button>
+      </div>
+      <p class="muted" style="margin:12px 0 0;font-size:12.5px">
+        Сначала установите Happ, затем нажмите «Подключить» — ключ добавится сам.</p>`;
+  }
+
+  const hint = {
+    android: 'Скачайте .apk и разрешите установку из этого источника.',
+    windows: 'Запустите .exe. При первом подключении Windows спросит разрешение на VPN.',
+    linux: 'Сделайте файл исполняемым: <code>chmod +x TargetVPN.AppImage</code>.',
+    macos: 'Откройте .dmg и перетащите TargetVPN в «Программы».',
+  }[os] || '';
+
+  return `
+    <p class="muted" style="margin:0 0 12px;font-size:13px">
+      Наш клиент <b>TargetVPN</b> — подключение в один тап, без настройки ключей вручную.</p>
+    <div class="stack">
+      ${build
+        ? `<button class="btn btn-primary wide" data-open="${esc(build.url)}">
+             ${esc(build.emoji)} Скачать TargetVPN для ${esc(build.title)}${
+             build.version ? ' · ' + esc(build.version) : ''}</button>`
+        : '<div class="empty" style="padding:12px">Сборка для этой системы ещё собирается</div>'}
+      <button class="btn btn-ghost wide" data-act="copy-clash">📋 Скопировать ссылку-подписку</button>
+      ${os === 'android'
+        ? '<button class="btn btn-ghost wide" data-act="bind">🔑 Показать код привязки</button>' : ''}
+    </div>
+    <p class="muted" style="margin:12px 0 0;font-size:12.5px">
+      ${hint} После запуска вставьте ссылку-подписку в «Профили» — дальше просто кнопка
+      подключения.</p>`;
+}
+
 function renderAppCard() {
   const box = $('#app-card');
   if (!box) return;
   if (!state.sub) { box.innerHTML = ''; return; }
+  const os = currentOs();
   box.innerHTML = `
     <div class="card">
-      <h3 style="margin:0 0 8px;font-size:15px">📱 Приложение TargetVPN</h3>
-      <p class="muted" style="margin:0 0 12px;font-size:13px">
-        Подключение в один тап, без настройки ключей. Приложение привязывается к телефону:
-        доступ работает только на нём, смена устройства — ${state.unbindPrice} ₽.</p>
-      <div class="stack">
-        ${state.downloads.length
-          ? state.downloads.map((d, i) => `<button class="btn ${i === 0 ? 'btn-primary' : 'btn-ghost'} wide"
-              data-download="${esc(d.url)}">${esc(d.emoji)} Скачать для ${esc(d.title)}${
-              d.version ? ' · ' + esc(d.version) : ''}</button>`).join('')
-          : '<div class="empty" style="padding:12px">Сборки приложения скоро появятся</div>'}
-        <button class="btn btn-ghost wide" id="btn-bind">🔑 Показать код привязки</button>
+      <h3 style="margin:0 0 10px;font-size:15px">📱 Подключение</h3>
+      <div class="tabs" style="padding-bottom:12px">
+        ${OS_LIST.map((o) => `<button class="tab ${o.id === os ? 'active' : ''}"
+          data-os="${o.id}">${o.emoji} ${esc(o.title)}</button>`).join('')}
       </div>
+      ${osPanel(os)}
     </div>`;
-  box.querySelectorAll('[data-download]').forEach((btn) => btn.addEventListener('click', () => {
-    const url = btn.dataset.download;
+
+  box.querySelectorAll('[data-os]').forEach((btn) => btn.addEventListener('click', () => {
     haptic();
+    setOs(btn.dataset.os);
+  }));
+  box.querySelectorAll('[data-open]').forEach((btn) => btn.addEventListener('click', () => {
+    haptic();
+    const url = btn.dataset.open;
     tg?.openLink?.(url) || window.open(url, '_blank');
   }));
-  $('#btn-bind').addEventListener('click', showBindCode);
+  box.querySelectorAll('[data-act]').forEach((btn) => btn.addEventListener('click', () => {
+    const act = btn.dataset.act;
+    if (act === 'bind') return showBindCode();
+    if (act === 'copy-sub') return copy(state.subUrl, 'Ссылка-подписка скопирована');
+    if (act === 'copy-clash') return copy(clashSubUrl(), 'Ссылка-подписка скопирована');
+    if (act === 'happ-connect') {
+      // Схема vless:// внутри Telegram не открывается — уводим на страницу подключения.
+      const url = `${state.subUrl.replace('/sub/', '/connect/')}?os=ios`;
+      haptic();
+      tg?.openLink?.(url, { try_instant_view: false }) || window.open(url, '_blank');
+    }
+  }));
 }
 
 async function showBindCode() {

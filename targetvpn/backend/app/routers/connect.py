@@ -24,12 +24,16 @@ router = APIRouter(tags=["connect"])
 # Happ открывает сами ссылки vless:// — отдельной схемы happ://add у него нет,
 # зашифрованные подписки happ://crypt5 требуют их сервиса и здесь не нужны.
 # Остальные клиенты умеют импортировать ссылку-подписку своей схемой.
+# Последнее поле — на каких системах клиент имеет смысл: по ?os= список сужается.
 CLIENTS = [
-    ("Happ", "🚀", "iPhone, iPad, Android — рекомендуем", "{key}"),
-    ("v2rayNG", "🤖", "Android", "v2rayng://install-config?url={sub}"),
-    ("Hiddify", "💻", "Android, Windows, macOS", "hiddify://install-config?url={sub}"),
-    ("Streisand", "🍏", "iPhone, iPad", "streisand://import/{sub}"),
-    ("V2Box", "🍏", "iPhone, iPad", "v2box://install-sub?url={sub}"),
+    ("Happ", "🚀", "iPhone, iPad, Android — рекомендуем", "{key}",
+     {"ios", "android"}),
+    ("v2rayNG", "🤖", "Android", "v2rayng://install-config?url={sub}",
+     {"android"}),
+    ("Hiddify", "💻", "Android, Windows, macOS", "hiddify://install-config?url={sub}",
+     {"android", "windows", "macos", "linux"}),
+    ("Streisand", "🍏", "iPhone, iPad", "streisand://import/{sub}", {"ios"}),
+    ("V2Box", "🍏", "iPhone, iPad", "v2box://install-sub?url={sub}", {"ios"}),
 ]
 
 # Куда отправить, если приложения ещё нет.
@@ -86,7 +90,7 @@ function copyKey() {{
 
 
 @router.get("/connect/{token}", response_class=HTMLResponse)
-async def connect_page(token: str, device: int | None = None,
+async def connect_page(token: str, device: int | None = None, os: str | None = None,
                        session: AsyncSession = Depends(get_session)):
     user = (await session.execute(select(User).where(User.sub_token == token))).scalar_one_or_none()
     if user is None or user.is_banned:
@@ -112,10 +116,12 @@ async def connect_page(token: str, device: int | None = None,
         device_note = f"Устройство «{row.name}». "
     key = row.config_url if row else ""
 
+    wanted = (os or "").strip().lower()
+    clients = [c for c in CLIENTS if not wanted or wanted in c[4]] or CLIENTS
     buttons = "\n".join(
         f'<a class="client" href="{scheme.format(sub=encoded, key=key)}">'
         f'<span class="emoji">{emoji}</span><span>{name}<small>{platforms}</small></span></a>'
-        for name, emoji, platforms, scheme in CLIENTS
+        for name, emoji, platforms, scheme, _systems in clients
         if "{key}" not in scheme or key
     )
     happ_links = " · ".join(f'<a href="{url}" style="color:#8ab4ff">{title}</a>'

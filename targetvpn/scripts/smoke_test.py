@@ -573,6 +573,15 @@ async def main() -> None:
             check("для остальных клиентов подставлена подписка",
                   "v2rayng://install-config?url=" in r.text and "/sub/" in r.text)
             check("есть ссылки на установку Happ", "apps.apple.com" in r.text)
+
+            r = await c.get(f"/connect/{connect_token}?os=ios")
+            check("для iPhone показан Happ", "Happ" in r.text, r.text[:200])
+            check("для iPhone убраны android-клиенты", "v2rayng://" not in r.text, r.text[:200])
+            r = await c.get(f"/connect/{connect_token}?os=windows")
+            check("для Windows убран Streisand", "streisand://" not in r.text, r.text[:200])
+            r = await c.get(f"/connect/{connect_token}?os=чепуха")
+            check("неизвестная система не ломает страницу",
+                  r.status_code == 200 and "v2rayng://" in r.text, r.text[:200])
             r = await c.get("/connect/неизвестный-токен")
             check("чужой токен на странице подключения отклонён", r.status_code == 404)
 
