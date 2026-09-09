@@ -21,7 +21,9 @@
     <string name="left_hours">%1$d ч. %2$d мин.</string>
     <string name="left_minutes">%1$d мин.</string>
 
-    <string name="connect">Подключиться</string>
+    <string name="connect">Подключиться через Happ</string>
+    <string name="connect_builtin">Встроенный туннель (бета)</string>
+    <string name="happ_missing">Happ не установлен. Открываем страницу подключения — там ссылки на установку.</string>
     <string name="disconnect">Отключиться</string>
     <string name="status_connected">VPN включён</string>
     <string name="status_connecting">Подключаемся…</string>

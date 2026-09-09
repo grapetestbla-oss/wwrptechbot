@@ -1,5 +1,6 @@
 package us.targetvpn.client
 
+import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -74,7 +75,8 @@ class MainActivity : AppCompatActivity() {
         api = Api(this)
 
         binding.bindButton.setOnClickListener { bind() }
-        binding.connectButton.setOnClickListener { connect() }
+        binding.connectButton.setOnClickListener { connectViaHapp() }
+        binding.builtinButton.setOnClickListener { connect() }
         binding.copyButton.setOnClickListener { copyKey() }
         binding.refreshButton.setOnClickListener { refresh() }
         binding.copyDiagnosticButton.setOnClickListener { copyDiagnostic() }
@@ -165,7 +167,42 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Включение и выключение собственного туннеля. */
+    /**
+     * Основной путь: ключ отдаётся в Happ. Он принимает ссылки vless://
+     * как deep link, поэтому отдельной схемы не нужно. Если приложения нет,
+     * открываем страницу подключения — там ссылки на установку.
+     */
+    private fun connectViaHapp() {
+        lifecycleScope.launch {
+            val key = runCatching { api.config() }.getOrElse { storage.config.orEmpty() }
+            if (key.isEmpty()) {
+                toast(getString(R.string.no_key))
+                return@launch
+            }
+            storage.config = key
+
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(key))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                startActivity(intent)
+            } catch (_: ActivityNotFoundException) {
+                copyToClipboard(key)
+                toast(getString(R.string.happ_missing))
+                openConnectPage()
+            }
+        }
+    }
+
+    private fun openConnectPage() {
+        val url = "${BuildConfig.API_BASE}/connect/${storage.subToken.orEmpty()}"
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (_: ActivityNotFoundException) {
+            toast(getString(R.string.error_generic))
+        }
+    }
+
+    /** Запасной путь: свой туннель внутри приложения. */
     private fun connect() {
         if (connected) {
             TargetVpnService.disconnect(this)
@@ -174,13 +211,13 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        binding.connectButton.isEnabled = false
+        binding.builtinButton.isEnabled = false
         binding.statusTitle.text = getString(R.string.status_connecting)
         lifecycleScope.launch {
             val key = runCatching { api.config() }.getOrElse { storage.config.orEmpty() }
             if (key.isEmpty()) {
                 toast(getString(R.string.no_key))
-                binding.connectButton.isEnabled = true
+                binding.builtinButton.isEnabled = true
                 return@launch
             }
             storage.config = key
@@ -204,8 +241,9 @@ class MainActivity : AppCompatActivity() {
     /** Рисует кнопку и заголовок под текущее состояние туннеля. */
     private fun renderConnection() {
         binding.connectButton.isEnabled = true
-        binding.connectButton.text =
-            getString(if (connected) R.string.disconnect else R.string.connect)
+        binding.builtinButton.isEnabled = true
+        binding.builtinButton.text =
+            getString(if (connected) R.string.disconnect else R.string.connect_builtin)
         if (connected) {
             binding.statusTitle.text = getString(R.string.status_connected)
         }

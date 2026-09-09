@@ -14,6 +14,7 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="vless" />
         </intent>
+        <package android:name="com.happproxy" />
         <package android:name="com.v2ray.ang" />
         <package android:name="app.hiddify.com" />
         <package android:name="com.github.kr328.clash" />

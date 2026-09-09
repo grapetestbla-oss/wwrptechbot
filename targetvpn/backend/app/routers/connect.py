@@ -21,14 +21,22 @@ from ..services import subs
 
 router = APIRouter(tags=["connect"])
 
-# Схемы популярных клиентов. Happ и Streisand — основной путь для iPhone,
-# v2rayNG и Hiddify — для Android и десктопа.
+# Happ открывает сами ссылки vless:// — отдельной схемы happ://add у него нет,
+# зашифрованные подписки happ://crypt5 требуют их сервиса и здесь не нужны.
+# Остальные клиенты умеют импортировать ссылку-подписку своей схемой.
 CLIENTS = [
-    ("Happ", "🍏", "iPhone, iPad, Android", "happ://add/{sub}"),
+    ("Happ", "🚀", "iPhone, iPad, Android — рекомендуем", "{key}"),
     ("v2rayNG", "🤖", "Android", "v2rayng://install-config?url={sub}"),
     ("Hiddify", "💻", "Android, Windows, macOS", "hiddify://install-config?url={sub}"),
     ("Streisand", "🍏", "iPhone, iPad", "streisand://import/{sub}"),
     ("V2Box", "🍏", "iPhone, iPad", "v2box://install-sub?url={sub}"),
+]
+
+# Куда отправить, если приложения ещё нет.
+HAPP_LINKS = [
+    ("App Store", "https://apps.apple.com/app/happ-proxy-utility/id6504287215"),
+    ("Google Play", "https://play.google.com/store/apps/details?id=com.happproxy"),
+    ("Сайт Happ", "https://www.happ.su/"),
 ]
 
 PAGE = """<!DOCTYPE html>
@@ -56,9 +64,10 @@ PAGE = """<!DOCTYPE html>
 </style></head>
 <body><div class="wrap">
   <h1>Подключение TargetVPN</h1>
-  <p class="sub">{device}Выберите приложение — ключ импортируется автоматически.
-    Если приложение не установлено, сначала поставьте его из магазина.</p>
+  <p class="sub">{device}Нажмите на приложение — ключ импортируется сам.
+    Если его ещё нет, поставьте Happ по ссылкам внизу и вернитесь сюда.</p>
   {buttons}
+  <p class="hint">Нет приложения? Установите Happ: {happ_links}</p>
   <div class="key" id="key">{sub_url}</div>
   <button class="copy" onclick="copyKey()">📋 Скопировать ссылку-подписку</button>
   <p class="hint">Ссылка-подписка сама обновляет ключи: при смене локации или
@@ -89,16 +98,27 @@ async def connect_page(token: str, device: int | None = None,
     sub_url = f"{settings.public_base_url.rstrip('/')}/sub/{user.sub_token}"
     encoded = quote(sub_url, safe="")
 
+    # Happ принимает сам ключ, поэтому нужен конкретный конфиг устройства.
     device_note = ""
+    row = None
     if device:
         row = (await session.execute(select(Device).where(
             Device.id == device, Device.user_id == user.id))).scalar_one_or_none()
-        if row is not None:
-            device_note = f"Устройство «{row.name}». "
+    if row is None:
+        row = (await session.execute(select(Device).where(
+            Device.user_id == user.id, Device.is_active.is_(True))
+            .order_by(Device.id))).scalars().first()
+    if row is not None:
+        device_note = f"Устройство «{row.name}». "
+    key = row.config_url if row else ""
 
     buttons = "\n".join(
-        f'<a class="client" href="{scheme.format(sub=encoded)}">'
+        f'<a class="client" href="{scheme.format(sub=encoded, key=key)}">'
         f'<span class="emoji">{emoji}</span><span>{name}<small>{platforms}</small></span></a>'
         for name, emoji, platforms, scheme in CLIENTS
+        if "{key}" not in scheme or key
     )
-    return HTMLResponse(PAGE.format(device=device_note, buttons=buttons, sub_url=sub_url))
+    happ_links = " · ".join(f'<a href="{url}" style="color:#8ab4ff">{title}</a>'
+                            for title, url in HAPP_LINKS)
+    return HTMLResponse(PAGE.format(device=device_note, buttons=buttons, sub_url=sub_url,
+                                    happ_links=happ_links))

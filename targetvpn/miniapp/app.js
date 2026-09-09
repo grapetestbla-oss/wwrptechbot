@@ -512,8 +512,8 @@ function openDeviceSheet(deviceId) {
       </div>` : ''}
     <div class="key-box" id="key-box">${esc(link) || 'Ключ выдаётся…'}</div>
     <div class="stack" style="margin-top:12px">
-      <button class="btn btn-primary wide" data-act="copy">📋 Скопировать ключ</button>
-      <button class="btn btn-ghost wide" data-act="import">📲 Подключить в приложении</button>
+      <button class="btn btn-ghost wide" data-act="copy">📋 Скопировать ключ</button>
+      <button class="btn btn-primary wide" data-act="import">🚀 Подключить через Happ</button>
       <button class="btn btn-ghost wide" data-act="region">🌍 Сменить локацию</button>
       <div class="row">
         <button class="btn btn-ghost btn-sm" data-act="refresh">♻️ Перевыпустить</button>

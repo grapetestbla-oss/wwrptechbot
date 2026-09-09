@@ -162,6 +162,15 @@
                 android:textColor="@color/on_brand" />
 
             <Button
+                android:id="@+id/builtinButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:backgroundTint="@color/card_soft"
+                android:text="@string/connect_builtin"
+                android:textColor="@color/text" />
+
+            <Button
                 android:id="@+id/copyButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

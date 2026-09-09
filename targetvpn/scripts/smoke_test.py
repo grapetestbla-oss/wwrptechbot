@@ -457,9 +457,12 @@ async def main() -> None:
             r = await c.get("/api/state", headers=auth)
             connect_token = r.json()["sub_url"].rsplit("/", 1)[-1]
             r = await c.get(f"/connect/{connect_token}")
-            check("страница подключения открывается",
-                  r.status_code == 200 and "happ://add/" in r.text, r.text[:120])
-            check("на странице есть ссылка-подписка", "/sub/" in r.text)
+            check("страница подключения открывается", r.status_code == 200, r.text[:120])
+            check("Happ получает сам ключ vless, а не выдуманную схему",
+                  "vless://" in r.text and "happ://add" not in r.text, r.text[:200])
+            check("для остальных клиентов подставлена подписка",
+                  "v2rayng://install-config?url=" in r.text and "/sub/" in r.text)
+            check("есть ссылки на установку Happ", "apps.apple.com" in r.text)
             r = await c.get("/connect/неизвестный-токен")
             check("чужой токен на странице подключения отклонён", r.status_code == 404)
 
