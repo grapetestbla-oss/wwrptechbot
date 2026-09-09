@@ -58,8 +58,11 @@ EXTRA_NAMES = {"Makefile"}
 SKIP_TOP_DIRS = {".git", "build", ".dart_tool", "core"}
 SKIP_FILES = {"LICENSE", "LICENSE.md", "NOTICE"}
 
-# Flutter из stable требует Gradle не ниже этой версии, а форк везёт 8.11.1.
+# Flutter из stable проверяет минимумы версий сборочной цепочки, а форк везёт
+# Gradle 8.11.1 и AGP 8.9.2 — оба ниже порога. Пара 8.14.3 + 8.11.1 согласована:
+# AGP 8.11 требует Gradle не ниже 8.13.
 GRADLE_VERSION = "8.14.3"
+AGP_VERSION = "8.11.1"
 
 
 def skipped(work: Path, path: Path) -> bool:
@@ -106,18 +109,32 @@ def patch_text(work: Path) -> int:
     return changed
 
 
-def bump_gradle(work: Path) -> str:
-    """Поднимает gradle wrapper: с 8.11.1 текущий Flutter собирать отказывается."""
+def bump_gradle(work: Path) -> list[str]:
+    """Поднимает Gradle и AGP до минимумов, которых требует текущий Flutter."""
+    done = []
+
     props = work / "android" / "gradle" / "wrapper" / "gradle-wrapper.properties"
-    if not props.is_file():
-        return ""
-    text = props.read_text(encoding="utf-8")
-    patched = re.sub(r"gradle-\d+(?:\.\d+)*-(all|bin)\.zip",
-                     f"gradle-{GRADLE_VERSION}-\\1.zip", text)
-    if patched == text:
-        return ""
-    props.write_text(patched, encoding="utf-8")
-    return GRADLE_VERSION
+    if props.is_file():
+        text = props.read_text(encoding="utf-8")
+        patched = re.sub(r"gradle-\d+(?:\.\d+)*-(all|bin)\.zip",
+                         f"gradle-{GRADLE_VERSION}-\\1.zip", text)
+        if patched != text:
+            props.write_text(patched, encoding="utf-8")
+            done.append(f"Gradle {GRADLE_VERSION}")
+
+    for name in ("settings.gradle.kts", "settings.gradle", "build.gradle.kts", "build.gradle"):
+        path = work / "android" / name
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        patched = re.sub(r'(id\("com\.android\.application"\) version ")[\d.]+(")',
+                         rf'\g<1>{AGP_VERSION}\g<2>', text)
+        patched = re.sub(r'(com\.android\.tools\.build:gradle:)[\d.]+',
+                         rf'\g<1>{AGP_VERSION}', patched)
+        if patched != text:
+            path.write_text(patched, encoding="utf-8")
+            done.append(f"AGP {AGP_VERSION} ({name})")
+    return done
 
 
 def replace_icons(work: Path) -> int:
@@ -213,8 +230,8 @@ def main() -> None:
     print(f"Готово: {work}")
     print(f"  файлов изменено: {files}")
     print(f"  иконок заменено: {icons}")
-    if gradle:
-        print(f"  gradle wrapper поднят до {gradle}")
+    for item in gradle:
+        print(f"  поднято: {item}")
     if leftovers:
         print("  ВНИМАНИЕ, старые имена остались в файлах:")
         for item in leftovers[:20]:

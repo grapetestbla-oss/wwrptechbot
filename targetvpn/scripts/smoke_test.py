@@ -457,16 +457,14 @@ async def main() -> None:
             check("после админской отвязки токен мёртв", r.status_code == 401)
 
             r = await c.post("/api/admin/settings", headers=oauth, json={
-                "macos_url": "https://example.com/TargetVPN.dmg", "macos_version": "1.0.0",
-                "linux_url": "https://example.com/TargetVPN.AppImage", "linux_version": "1.0.0"})
-            check("админ задаёт ссылки на десктопные сборки",
+                "macos_url": "https://example.com/TargetVPN.dmg", "macos_version": "1.0.0"})
+            check("админ задаёт ссылку на сборку macOS",
                   r.json()["macos_url"].endswith(".dmg"), r.text[:150])
             r = await c.get("/internal/downloads", headers={"X-Internal-Secret": "smoke-secret"})
             plats = {b["platform"] for b in r.json()}
-            check("бот отдаёт кнопки macOS и Linux",
-                  {"macos", "linux"} <= plats, str(plats))
-            await c.post("/api/admin/settings", headers=oauth,
-                         json={"macos_url": "", "linux_url": ""})
+            check("бот отдаёт кнопки для всех заполненных систем",
+                  {"macos", "linux", "windows"} <= plats, str(plats))
+            await c.post("/api/admin/settings", headers=oauth, json={"macos_url": ""})
 
             r = await c.post("/api/admin/settings", headers=auth, json={"apk_url": "http://x"})
             check("настройки закрыты от обычных юзеров", r.status_code == 403)
@@ -585,19 +583,26 @@ async def main() -> None:
             r = await c.get("/connect/неизвестный-токен")
             check("чужой токен на странице подключения отклонён", r.status_code == 404)
 
-            # --- кнопки скачивания под три платформы ---
+            # --- кнопки скачивания ---
             r = await c.get("/api/state", headers=auth)
-            check("без ссылок кнопок скачивания нет", r.json()["downloads"] == [])
+            plats = [d["platform"] for d in r.json()["downloads"]]
+            check("по умолчанию ведут на последний релиз",
+                  plats == ["android", "windows", "linux"], str(plats))
+            check("ссылка указывает на свежий релиз без правки настроек",
+                  all("releases/latest/download" in d["url"] for d in r.json()["downloads"]),
+                  str(r.json()["downloads"])[:200])
 
             r = await c.post("/api/admin/settings", headers=oauth, json={
                 "apk_url": "https://cdn.example/targetvpn.apk", "apk_version": "1.0.0",
-                "windows_url": "https://cdn.example/targetvpn.exe"})
+                "windows_url": "https://cdn.example/targetvpn.exe", "linux_url": ""})
             check("админ задаёт ссылки на сборки", r.status_code == 200)
 
             r = await c.get("/api/state", headers=auth)
             downloads = r.json()["downloads"]
             check("показываются только заполненные платформы",
                   [d["platform"] for d in downloads] == ["android", "windows"], str(downloads)[:160])
+            check("пустая ссылка убирает кнопку, а не возвращает значение по умолчанию",
+                  all(d["platform"] != "linux" for d in downloads))
             check("версия попадает в кнопку",
                   downloads[0]["version"] == "1.0.0" and downloads[0]["emoji"] == "🤖")
 

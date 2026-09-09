@@ -6,19 +6,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Setting, utcnow
 
+# Постоянные ссылки на ассеты последнего релиза клиента: GitHub сам
+# переадресует на свежий тег, поэтому новая сборка подхватывается без правок.
+RELEASES = "https://github.com/grapetestbla-oss/wwrptechbot/releases/latest/download"
+
 DEFAULTS: dict[str, str] = {
     # Цена одной отвязки HWID, рублей.
     "unbind_price_rub": "50",
     # Ссылки на сборки приложения. Кнопка появляется, только если ссылка задана.
-    "apk_url": "",
+    # Значения по умолчанию ведут на последний релиз и переопределяются в админке.
+    "apk_url": f"{RELEASES}/TargetVPN-android-arm64-v8a.apk",
     "apk_version": "",
     "ios_url": "",
     "ios_version": "",
-    "windows_url": "",
+    "windows_url": f"{RELEASES}/TargetVPN-windows-amd64-setup.exe",
     "windows_version": "",
     "macos_url": "",
     "macos_version": "",
-    "linux_url": "",
+    "linux_url": f"{RELEASES}/TargetVPN-linux-amd64.AppImage",
     "linux_version": "",
     # Сколько минут живёт код привязки приложения.
     "bind_code_ttl_min": "15",
