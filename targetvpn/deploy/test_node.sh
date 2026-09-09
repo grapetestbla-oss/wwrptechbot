@@ -65,6 +65,59 @@ if [[ -n "$SERVER_PBK" && "$SERVER_PBK" != "$PBK" ]]; then
 fi
 ok "Публичный ключ совпадает с конфигурацией ноды"
 
+# shortId: если его нет в списке ноды, сервер молча рвёт соединение.
+SERVER_SIDS=$(sed -n '/shortIds/,/]/p' /var/lib/marzban/xray_config.json 2>/dev/null \
+  | grep -o '"[0-9a-fA-F]\+"' | tr -d '"' | tr '\n' ' ')
+if [[ -n "$SERVER_SIDS" ]]; then
+  if grep -qw "$SID" <<<"$SERVER_SIDS"; then
+    ok "shortId из ключа есть в конфигурации ноды"
+  else
+    bad "shortId из ключа отсутствует на ноде"
+    echo "  в ключе: $SID"
+    echo "  на ноде: $SERVER_SIDS"
+  fi
+fi
+
+# Ключ в нашей базе мог устареть: сравним с тем, что панель выдаёт сейчас.
+say "Сравниваем с ключом из панели Marzban"
+CREDS=/opt/targetvpn/.node-credentials
+if [[ -f "$CREDS" ]]; then
+  # shellcheck disable=SC1090
+  source "$CREDS"
+  PANEL_PORT=$(sed -n 's/^UVICORN_PORT[ =]*//p' /opt/marzban/.env 2>/dev/null | tr -d ' "' | head -1)
+  PANEL_PORT=${PANEL_PORT:-8000}
+  TOKEN=$(curl -s --max-time 10 -X POST "http://127.0.0.1:${PANEL_PORT}/api/admin/token" \
+    -d "username=${PANEL_USER}&password=${PANEL_PASS}" | sed -E 's/.*"access_token":"([^"]*)".*/\1/')
+  if [[ -n "$TOKEN" && "$TOKEN" != *"{"* ]]; then
+    MARZBAN_USER=$(sed -E 's|.*#||' <<<"$KEY" | sed -E 's/%20.*//; s/.*\(//' )
+    REMOTE_USER=${TVPN_REMOTE_USER:-tv_${OWNER_ID}_1}
+    LIVE=$(curl -s --max-time 10 -H "Authorization: Bearer $TOKEN" \
+      "http://127.0.0.1:${PANEL_PORT}/api/user/${REMOTE_USER}" \
+      | grep -o 'vless://[^"]*' | head -1)
+    if [[ -n "$LIVE" ]]; then
+      LIVE_UUID=$(sed -E 's|vless://([^@]+)@.*|\1|' <<<"$LIVE")
+      LIVE_SID=$(sed -E 's/.*[?&]sid=([^&#]*).*/\1/' <<<"$LIVE")
+      LIVE_PBK=$(sed -E 's/.*[?&]pbk=([^&#]*).*/\1/' <<<"$LIVE")
+      if [[ "$LIVE_UUID" == "$UUID" && "$LIVE_SID" == "$SID" && "$LIVE_PBK" == "$PBK" ]]; then
+        ok "Ключ в базе совпадает с тем, что выдаёт панель"
+      else
+        bad "Ключ в базе устарел — панель выдаёт другой"
+        echo "  панель: uuid=${LIVE_UUID:0:8}… sid=$LIVE_SID"
+        echo "  база:   uuid=${UUID:0:8}… sid=$SID"
+        warn "Дальше проверяем ключом из панели."
+        KEY=$LIVE
+        UUID=$LIVE_UUID; SID=$LIVE_SID; PBK=$LIVE_PBK
+      fi
+    else
+      warn "Панель не отдала ключ для ${REMOTE_USER}"
+    fi
+  else
+    warn "Не удалось получить токен панели"
+  fi
+else
+  warn "Нет $CREDS — пропускаем сверку с панелью"
+fi
+
 # --- 3. Сайт-прикрытие Reality -------------------------------------------
 say "Проверяем сайт маскировки ($SNI:443) с самого сервера"
 if timeout 10 bash -c "cat < /dev/null > /dev/tcp/${SNI}/443" 2>/dev/null; then
@@ -105,7 +158,9 @@ EOF
   local out
   out=$(curl -sS --max-time 20 -x "socks5h://127.0.0.1:${SOCKS_PORT}" \
     https://1.1.1.1/cdn-cgi/trace 2>&1)
-  kill "$XRAY_PID" 2>/dev/null; XRAY_PID=""
+  # Пауза, чтобы ядро успело записать причину отказа в лог.
+  sleep 2
+  kill -TERM "$XRAY_PID" 2>/dev/null; wait "$XRAY_PID" 2>/dev/null; XRAY_PID=""
 
   if grep -q "ip=" <<<"$out"; then
     ok "$label: трафик прошёл"
@@ -119,6 +174,11 @@ EOF
   grep -viE "^$" "$WORK/xray.log" | tail -8 | sed 's/^/    /'
   return 1
 }
+
+say "Проверяем часы сервера — Reality завязан на время"
+if command -v timedatectl >/dev/null 2>&1; then
+  timedatectl | grep -E "Time zone|synchronized|Universal" | sed 's/^/  /'
+fi
 
 say "Проверка через 127.0.0.1 — это про ключи и Reality"
 LOCAL_OK=0
