@@ -379,6 +379,26 @@ async def upsert_node(payload: NodeUpsert, admin: User = Depends(current_admin),
                         sort_order=node.sort_order)
 
 
+@router.post("/nodes/{node_id}/resync")
+async def resync_node(node_id: int, admin: User = Depends(current_admin),
+                      session: AsyncSession = Depends(get_session)):
+    """Заново выдать ноде всех пользователей и перезапустить ядро.
+
+    Лечит ситуацию, когда панель знает пользователя, а работающий Xray нет:
+    клиент подключается и сразу получает разрыв.
+    """
+    node = (await session.execute(select(Node).where(Node.id == node_id))).scalar_one_or_none()
+    if node is None:
+        raise HTTPException(404, "Локация не найдена")
+    if not node.url:
+        raise HTTPException(400, "У локации не задан адрес панели")
+    result = await subs.resync_node(session, node)
+    await subs.log_admin(session, admin.tg_id, "node_resync", node.code,
+                         f"восстановлено {result['restored']} из {result['devices']}")
+    await session.commit()
+    return result
+
+
 @router.delete("/nodes/{node_id}")
 async def disable_node(node_id: int, admin: User = Depends(current_admin),
                        session: AsyncSession = Depends(get_session)):

@@ -258,6 +258,16 @@ async def main() -> None:
                              json={"name": "Ghost", "platform": "ios", "node_id": 999})
             check("несуществующая локация отклонена", r.status_code == 400)
 
+            r = await c.post(f"/api/admin/nodes/{nl_id}/resync", headers=oauth)
+            check("пересинхронизация локации",
+                  r.status_code == 200 and "restored" in r.json(), r.text[:150])
+
+            r = await c.post("/api/admin/nodes/999/resync", headers=oauth)
+            check("пересинхронизация несуществующей локации отклонена", r.status_code == 404)
+
+            r = await c.post(f"/api/admin/nodes/{nl_id}/resync", headers=auth)
+            check("пересинхронизация закрыта от обычных юзеров", r.status_code == 403)
+
             r = await c.delete(f"/api/admin/nodes/{nl_id}", headers=oauth)
             check("отключение локации", r.status_code == 200)
             r = await c.get("/api/nodes", headers=auth)

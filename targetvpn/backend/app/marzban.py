@@ -134,6 +134,19 @@ class MarzbanClient:
             return
         await self._request("POST", f"/api/user/{username}/reset")
 
+    async def restart_core(self) -> None:
+        """Перечитать конфигурацию ядра: после этого Marzban заново
+        подсовывает всех пользователей в работающий Xray."""
+        if not self.enabled:
+            return
+        await self._request("POST", "/api/core/restart")
+
+    async def core_config(self) -> dict:
+        """Конфигурация работающего ядра — по ней видно, дошёл ли пользователь."""
+        if not self.enabled:
+            return {}
+        return await self._request("GET", "/api/core/config") or {}
+
     async def system_stats(self) -> dict:
         if not self.enabled:
             if settings.demo_mode:

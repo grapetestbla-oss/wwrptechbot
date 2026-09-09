@@ -273,6 +273,47 @@ def _apply_remote(device: Device, data: dict | None, base_url: str = "") -> None
     device.synced_at = utcnow()
 
 
+async def resync_node(session: AsyncSession, node: Node) -> dict:
+    """Заново выдаёт всех пользователей ноде и перезапускает ядро.
+
+    Нужно, когда панель хранит пользователя, а работающий Xray о нём не знает:
+    клиент тогда получает разрыв сразу после установки соединения.
+    """
+    client = client_for(node)
+    devices = (await session.execute(select(Device).where(
+        Device.node_id == node.id, Device.is_active.is_(True)))).scalars().all()
+
+    restored, failed = 0, 0
+    for device in devices:
+        user = (await session.execute(select(User).where(
+            User.id == device.user_id))).scalar_one_or_none()
+        if user is None:
+            continue
+        sub = await active_subscription(session, user)
+        if sub is None:
+            continue
+        try:
+            data = await client.create_user(device.remote_username,
+                                            int(aware(sub.expires_at).timestamp()),
+                                            sub.traffic_gb, note=f"tg:{user.tg_id}")
+            _apply_remote(device, data, client.url)
+            restored += 1
+        except MarzbanError as exc:
+            log.error("Не удалось восстановить %s: %s", device.remote_username, exc)
+            failed += 1
+
+    restarted = True
+    try:
+        await client.restart_core()
+    except MarzbanError as exc:
+        log.error("Ядро не перезапустилось: %s", exc)
+        restarted = False
+
+    await session.commit()
+    return {"devices": len(devices), "restored": restored, "failed": failed,
+            "core_restarted": restarted}
+
+
 async def notify(session: AsyncSession, tg_id: int, text: str) -> None:
     session.add(Notification(tg_id=tg_id, text=text))
     await session.flush()

@@ -404,7 +404,9 @@ async function adminNodes(body) {
         <button class="btn btn-sm btn-ghost" data-node="${n.id}">✏️</button>
       </div>`).join('') : '<div class="empty">Локаций нет</div>'}
     <p class="muted" style="font-size:12px">
-      Отключённая локация не выдаётся новым устройствам, уже выданные ключи продолжают работать.</p>`;
+      Отключённая локация не выдаётся новым устройствам, уже выданные ключи продолжают работать.
+      Если клиенты подключаются и сразу отваливаются — нажмите «Пересинхронизировать»
+      в карточке локации: панель могла не подсунуть пользователей работающему ядру.</p>`;
 
   document.querySelector('#node-new').addEventListener('click', () => nodeForm(null));
   body.querySelectorAll('[data-node]').forEach((btn) => btn.addEventListener('click', () =>
@@ -449,6 +451,8 @@ function nodeForm(node) {
       <label class="muted" style="font-size:13px">
         <input type="checkbox" id="nf-ssl" ${v.verify_ssl ? 'checked' : ''} /> проверять TLS-сертификат панели</label>
       <button class="btn btn-primary wide" id="nf-save">Сохранить</button>
+      ${node ? `<button class="btn btn-ghost wide" id="nf-resync">
+        ♻️ Пересинхронизировать с ядром</button>` : ''}
       ${node ? '<button class="btn btn-danger wide" id="nf-off">Отключить локацию</button>' : ''}
     </div>`);
 
@@ -477,6 +481,18 @@ function nodeForm(node) {
       toast('Локация сохранена');
       renderAdmin('nodes');
     } catch (err) { toast(err.message); e.currentTarget.disabled = false; }
+  });
+
+  document.querySelector('#nf-resync')?.addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    e.currentTarget.textContent = 'Синхронизируем…';
+    try {
+      const res = await api(`/api/admin/nodes/${node.id}/resync`, { method: 'POST' });
+      toast(`Выдано ключей: ${res.restored} из ${res.devices}` +
+        (res.core_restarted ? ', ядро перезапущено' : ', ядро не перезапустилось'));
+    } catch (err) { toast(err.message); }
+    e.currentTarget.disabled = false;
+    e.currentTarget.textContent = '♻️ Пересинхронизировать с ядром';
   });
 
   document.querySelector('#nf-off')?.addEventListener('click', async () => {

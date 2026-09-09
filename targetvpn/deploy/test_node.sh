@@ -150,9 +150,12 @@ if [[ -n "${TOKEN:-}" ]]; then
     ok "UUID найден в конфигурации работающего ядра"
   elif [[ -n "$RUNNING" && "$RUNNING" != *"detail"* ]]; then
     bad "UUID отсутствует в работающем ядре — сервер не знает этого клиента"
-    warn "Marzban не применил пользователя. Помогает перезапуск ядра:"
-    warn "  curl -X POST -H \"Authorization: Bearer \$TOKEN\" http://127.0.0.1:${PANEL_PORT}/api/core/restart"
-    warn "или marzban restart"
+    warn "Marzban не применил пользователя работающему ядру."
+    warn "Лечится одной кнопкой: Админка -> Локации -> ваша локация ->"
+    warn "«Пересинхронизировать с ядром»."
+    warn "Или прямо здесь:"
+    warn "  curl -s -X POST -H \"Authorization: Bearer \$TOKEN\" \\"
+    warn "    http://127.0.0.1:${PANEL_PORT}/api/core/restart"
   else
     warn "Панель не отдала конфигурацию ядра — пропускаем проверку"
   fi
