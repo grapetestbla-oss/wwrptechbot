@@ -29,7 +29,18 @@ dart setup.dart android --arch arm64     # или linux/windows/macos
 GitHub Actions: **Actions → «Build TargetVPN client (FlClashX)» → Run workflow**.
 Вход `release: true` — сразу опубликовать релиз с артефактами.
 
-Матрица: `android` (.apk), `windows` (.exe), `linux` (.AppImage/.deb), `macos` (.dmg).
+Матрица: `android` (.apk), `windows` (.exe), `linux` (.AppImage/.deb).
+
+Скрипт помимо переименования поднимает gradle wrapper форка (8.11.1) до 8.14.3 —
+Flutter из stable отказывается собирать с более старым — и в конце проверяет,
+что старых имён в файлах сборки не осталось.
+
+## macOS
+
+Сборщик форка упаковывает приложение в `.dmg` через `create-dmg`, а тот требует
+подписи **Apple Developer ID**. Без неё сборка падает на шаге подписи, а
+неподписанное приложение macOS всё равно не запустит. Поэтому macOS в матрице
+нет: там подключаемся ссылкой-подпиской через Hiddify или Happ.
 
 ## iOS
 

@@ -40,7 +40,6 @@ INSTALL_HINTS = {
     "android": "Скачайте .apk и разрешите установку из этого источника.",
     "windows": "Запустите .exe — при первом подключении Windows спросит разрешение на VPN.",
     "linux": "Сделайте файл исполняемым: <code>chmod +x TargetVPN.AppImage</code>.",
-    "macos": "Откройте .dmg и перетащите TargetVPN в «Программы».",
 }
 
 WELCOME = (
@@ -111,7 +110,19 @@ async def send_ios(message: Message) -> None:
         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 
+MACOS_NOTE = (
+    "<b>💻 macOS</b>\n\n"
+    "Сборки TargetVPN под macOS нет: Apple требует подписи Developer ID, "
+    "без неё система не даст запустить приложение.\n\n"
+    "Подключайтесь ссылкой-подпиской через <b>Hiddify</b> или <b>Happ</b> — "
+    "ссылка есть в мини-приложении, кнопка «Скопировать ссылку-подписку»."
+)
+
+
 async def send_build(message: Message, os_id: str) -> None:
+    if os_id == "macos":
+        return await message.answer(MACOS_NOTE, reply_markup=main_kb())
+
     try:
         builds = await internal("GET", "/internal/downloads") or []
     except Exception:  # noqa: BLE001 - бэкенд мог перезапускаться

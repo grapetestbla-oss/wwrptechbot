@@ -13,9 +13,17 @@ FlClashX и его предок FlClash распространяются под 
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from pathlib import Path
+
+# Windows-раннер печатает в cp1252 и падает на кириллице — переводим вывод в utf-8.
+for stream in (sys.stdout, sys.stderr):
+    try:
+        stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
 
 UPSTREAM = "https://github.com/pluralplay/FlClashX.git"
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,11 +44,28 @@ REPLACEMENTS = [
 ]
 
 # Файлы, где замена осмысленна. Бинарники и лицензии не трогаем.
-SUFFIXES = {".dart", ".yaml", ".yml", ".gradle", ".kts", ".xml", ".json", ".cpp", ".h",
-            ".cmake", ".txt", ".xcconfig", ".pbxproj", ".plist", ".rc", ".desktop", ".arb",
-            ".properties", ".iss", ".sh", ".ps1"}
-SKIP_DIRS = {".git", "build", ".dart_tool", "core"}
+# Kotlin (.kt) и AIDL обязательны: без них имя пакета в gradle разъезжается
+# с объявлениями package в исходниках и сборка Android падает.
+SUFFIXES = {".dart", ".yaml", ".yml", ".gradle", ".kts", ".kt", ".java", ".aidl", ".xml",
+            ".json", ".cpp", ".cc", ".h", ".cmake", ".txt", ".xcconfig", ".pbxproj",
+            ".xcscheme", ".xib", ".swift", ".plist", ".rc", ".rs", ".pro", ".desktop",
+            ".arb", ".properties", ".iss", ".sh", ".ps1"}
+# Файлы без расширения, которые тоже надо переименовать.
+EXTRA_NAMES = {"Makefile"}
+# Каталоги верхнего уровня, которые не трогаем. Именно верхнего: "core" в корне
+# — это исходники ядра на Go, а вот android/core уже наш модуль и его надо
+# переименовать вместе со всеми.
+SKIP_TOP_DIRS = {".git", "build", ".dart_tool", "core"}
 SKIP_FILES = {"LICENSE", "LICENSE.md", "NOTICE"}
+
+# Flutter из stable требует Gradle не ниже этой версии, а форк везёт 8.11.1.
+GRADLE_VERSION = "8.14.3"
+
+
+def skipped(work: Path, path: Path) -> bool:
+    """True, если файл лежит в каталоге верхнего уровня, который мы не трогаем."""
+    parts = path.relative_to(work).parts
+    return bool(parts) and parts[0] in SKIP_TOP_DIRS
 
 
 def run(command: list[str], cwd: Path | None = None) -> None:
@@ -62,9 +87,11 @@ def clone(work: Path, ref: str) -> None:
 def patch_text(work: Path) -> int:
     changed = 0
     for path in work.rglob("*"):
-        if not path.is_file() or path.suffix not in SUFFIXES:
+        if not path.is_file():
             continue
-        if path.name in SKIP_FILES or any(part in SKIP_DIRS for part in path.parts):
+        if path.suffix not in SUFFIXES and path.name not in EXTRA_NAMES:
+            continue
+        if path.name in SKIP_FILES or skipped(work, path):
             continue
         try:
             text = path.read_text(encoding="utf-8")
@@ -77,6 +104,20 @@ def patch_text(work: Path) -> int:
             path.write_text(text, encoding="utf-8")
             changed += 1
     return changed
+
+
+def bump_gradle(work: Path) -> str:
+    """Поднимает gradle wrapper: с 8.11.1 текущий Flutter собирать отказывается."""
+    props = work / "android" / "gradle" / "wrapper" / "gradle-wrapper.properties"
+    if not props.is_file():
+        return ""
+    text = props.read_text(encoding="utf-8")
+    patched = re.sub(r"gradle-\d+(?:\.\d+)*-(all|bin)\.zip",
+                     f"gradle-{GRADLE_VERSION}-\\1.zip", text)
+    if patched == text:
+        return ""
+    props.write_text(patched, encoding="utf-8")
+    return GRADLE_VERSION
 
 
 def replace_icons(work: Path) -> int:
@@ -95,7 +136,7 @@ def replace_icons(work: Path) -> int:
     logo = Image.open(source).convert("RGBA")
     replaced = 0
     for path in list(work.rglob("*.png")):
-        if any(part in SKIP_DIRS for part in path.parts):
+        if skipped(work, path):
             continue
         name = path.name.lower()
         if not any(marker in name for marker in ("ic_launcher", "app_icon", "logo", "icon")):
@@ -108,6 +149,30 @@ def replace_icons(work: Path) -> int:
         except OSError:
             continue
     return replaced
+
+
+MARKERS = ("com.follow.clash", "FlClash", "flclash", "fl_clash")
+
+
+def find_leftovers(work: Path) -> list[str]:
+    """Ищет недоделанный ребрендинг: молча собранный FlClashX нам не нужен."""
+    found = []
+    for path in work.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.suffix not in SUFFIXES and path.name not in EXTRA_NAMES:
+            continue
+        if path.name in SKIP_FILES or skipped(work, path):
+            continue
+        if path.name == "TARGETVPN_CHANGES.md":
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if any(marker in text for marker in MARKERS):
+            found.append(str(path.relative_to(work)))
+    return found
 
 
 def write_notice(work: Path, ref: str) -> None:
@@ -140,12 +205,21 @@ def main() -> None:
     work = Path(args.work).resolve()
     clone(work, args.ref)
     files = patch_text(work)
+    gradle = bump_gradle(work)
     icons = replace_icons(work)
     write_notice(work, args.ref)
 
+    leftovers = find_leftovers(work)
     print(f"Готово: {work}")
     print(f"  файлов изменено: {files}")
     print(f"  иконок заменено: {icons}")
+    if gradle:
+        print(f"  gradle wrapper поднят до {gradle}")
+    if leftovers:
+        print("  ВНИМАНИЕ, старые имена остались в файлах:")
+        for item in leftovers[:20]:
+            print(f"    {item}")
+        raise SystemExit("Ребрендинг неполный — сборка получилась бы с чужим именем")
     print("Сборка: flutter build apk --release (или windows/linux/macos)")
 
 

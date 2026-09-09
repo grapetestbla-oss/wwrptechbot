@@ -569,7 +569,7 @@ const OS_LIST = [
   { id: 'ios', emoji: '🍏', title: 'iPhone', via: 'happ' },
   { id: 'windows', emoji: '🪟', title: 'Windows', via: 'app' },
   { id: 'linux', emoji: '🐧', title: 'Linux', via: 'app' },
-  { id: 'macos', emoji: '💻', title: 'macOS', via: 'app' },
+  { id: 'macos', emoji: '💻', title: 'macOS', via: 'sub' },
 ];
 
 const HAPP_STORES = [
@@ -623,11 +623,25 @@ function osPanel(os) {
         Сначала установите Happ, затем нажмите «Подключить» — ключ добавится сам.</p>`;
   }
 
+  if (os === 'macos') {
+    return `
+      <p class="muted" style="margin:0 0 12px;font-size:13px">
+        Сборки TargetVPN под macOS нет: Apple требует подписи Developer ID, без неё
+        система не даст запустить приложение. Подключаемся ссылкой-подпиской через
+        <b>Hiddify</b> или <b>Happ</b> — оба бесплатные.</p>
+      <div class="stack">
+        <button class="btn btn-primary wide" data-act="copy-clash">
+          📋 Скопировать ссылку-подписку</button>
+        <button class="btn btn-ghost wide" data-act="connect">🔗 Открыть в клиенте</button>
+      </div>
+      <p class="muted" style="margin:12px 0 0;font-size:12.5px">
+        Вставьте ссылку в клиент разделом «Профили» или «Подписки».</p>`;
+  }
+
   const hint = {
     android: 'Скачайте .apk и разрешите установку из этого источника.',
     windows: 'Запустите .exe. При первом подключении Windows спросит разрешение на VPN.',
     linux: 'Сделайте файл исполняемым: <code>chmod +x TargetVPN.AppImage</code>.',
-    macos: 'Откройте .dmg и перетащите TargetVPN в «Программы».',
   }[os] || '';
 
   return `
@@ -677,6 +691,12 @@ function renderAppCard() {
     if (act === 'bind') return showBindCode();
     if (act === 'copy-sub') return copy(state.subUrl, 'Ссылка-подписка скопирована');
     if (act === 'copy-clash') return copy(clashSubUrl(), 'Ссылка-подписка скопирована');
+    if (act === 'connect') {
+      const url = `${state.subUrl.replace('/sub/', '/connect/')}?os=${os}`;
+      haptic();
+      tg?.openLink?.(url, { try_instant_view: false }) || window.open(url, '_blank');
+      return;
+    }
     if (act === 'happ-connect') {
       // Схема vless:// внутри Telegram не открывается — уводим на страницу подключения.
       const url = `${state.subUrl.replace('/sub/', '/connect/')}?os=ios`;

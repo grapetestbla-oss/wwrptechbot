@@ -1,7 +1,9 @@
 name: Build TargetVPN client (FlClashX)
 
-# Собирает ребрендированный клиент на ядре mihomo под Android, Windows,
-# Linux и macOS. iOS у этого проекта нет — для iPhone остаётся Happ.
+# Собирает ребрендированный клиент на ядре mihomo под Android, Windows и Linux.
+# iOS у проекта нет — для iPhone остаётся Happ. macOS не собираем: сборщик форка
+# упаковывает приложение в .dmg через create-dmg, а тот требует подписи
+# Apple Developer ID, которой у нас нет.
 
 on:
   # workflow_dispatch работает только с ветки по умолчанию, поэтому сборку
@@ -34,9 +36,10 @@ jobs:
             target: linux
           - os: windows-latest
             target: windows
-          - os: macos-latest
-            target: macos
     runs-on: ${{ matrix.os }}
+    env:
+      # Windows-раннер иначе пишет вывод в cp1252 и падает на кириллице.
+      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
 
@@ -79,7 +82,6 @@ jobs:
             android) dart setup.dart android --arch arm64 ;;
             linux)   dart setup.dart linux --arch amd64 ;;
             windows) dart setup.dart windows --arch amd64 ;;
-            macos)   dart setup.dart macos --arch arm64 ;;
           esac
 
       - name: Собрать артефакты
@@ -100,7 +102,7 @@ jobs:
 
   release:
     needs: build
-    if: github.event.inputs.release != 'false'
+    if: ${{ always() && github.event.inputs.release != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -109,7 +111,15 @@ jobs:
         with:
           path: artifacts
 
+      - name: Проверить, что есть что публиковать
+        id: check
+        run: |
+          count=$(find artifacts -type f | wc -l)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "Файлов для релиза: $count"
+
       - name: Опубликовать релиз
+        if: steps.check.outputs.count != '0'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: client-${{ github.run_number }}
