@@ -532,6 +532,16 @@ async function adminSettings(body) {
             placeholder="https://.../targetvpn-setup.exe" /></div>
         <div class="field"><label>Версия Windows-сборки</label>
           <input class="input" id="st-win-ver" value="${esc(cfg.windows_version)}" placeholder="1.0.0" /></div>
+        <div class="field"><label>💻 Ссылка для macOS</label>
+          <input class="input" id="st-mac" value="${esc(cfg.macos_url)}"
+            placeholder="https://.../TargetVPN.dmg" /></div>
+        <div class="field"><label>Версия macOS-сборки</label>
+          <input class="input" id="st-mac-ver" value="${esc(cfg.macos_version)}" placeholder="1.0.0" /></div>
+        <div class="field"><label>🐧 Ссылка для Linux</label>
+          <input class="input" id="st-lin" value="${esc(cfg.linux_url)}"
+            placeholder="https://.../TargetVPN.AppImage" /></div>
+        <div class="field"><label>Версия Linux-сборки</label>
+          <input class="input" id="st-lin-ver" value="${esc(cfg.linux_version)}" placeholder="1.0.0" /></div>
         <div class="field"><label>Срок жизни кода привязки, минут</label>
           <input class="input" id="st-ttl" type="number" min="1" max="120"
             value="${Number(cfg.bind_code_ttl_min)}" /></div>
@@ -553,6 +563,10 @@ async function adminSettings(body) {
         ios_version: document.querySelector('#st-ios-ver').value.trim(),
         windows_url: document.querySelector('#st-win').value.trim(),
         windows_version: document.querySelector('#st-win-ver').value.trim(),
+        macos_url: document.querySelector('#st-mac').value.trim(),
+        macos_version: document.querySelector('#st-mac-ver').value.trim(),
+        linux_url: document.querySelector('#st-lin').value.trim(),
+        linux_version: document.querySelector('#st-lin-ver').value.trim(),
         bind_code_ttl_min: Number(document.querySelector('#st-ttl').value),
       }});
       toast('Настройки сохранены');

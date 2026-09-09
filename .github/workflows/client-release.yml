@@ -4,6 +4,13 @@ name: Build TargetVPN client (FlClashX)
 # Linux и macOS. iOS у этого проекта нет — для iPhone остаётся Happ.
 
 on:
+  # workflow_dispatch работает только с ветки по умолчанию, поэтому сборку
+  # запускает и push, затрагивающий сам клиент.
+  push:
+    branches: [claude/telegram-vpn-mini-app-jn457e]
+    paths:
+      - "targetvpn/client/**"
+      - ".github/workflows/client-release.yml"
   workflow_dispatch:
     inputs:
       ref:
@@ -93,7 +100,7 @@ jobs:
 
   release:
     needs: build
-    if: github.event.inputs.release == 'true'
+    if: github.event.inputs.release != 'false'
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -181,6 +181,10 @@ class SettingsUpsert(BaseModel):
     ios_version: str | None = None
     windows_url: str | None = None
     windows_version: str | None = None
+    macos_url: str | None = None
+    macos_version: str | None = None
+    linux_url: str | None = None
+    linux_version: str | None = None
     bind_code_ttl_min: int | None = None
 
 

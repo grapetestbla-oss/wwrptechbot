@@ -456,6 +456,18 @@ async def main() -> None:
                 "Authorization": f"Bearer {new_token}", "X-HWID": "new-phone-abcdef1234567890"})
             check("после админской отвязки токен мёртв", r.status_code == 401)
 
+            r = await c.post("/api/admin/settings", headers=oauth, json={
+                "macos_url": "https://example.com/TargetVPN.dmg", "macos_version": "1.0.0",
+                "linux_url": "https://example.com/TargetVPN.AppImage", "linux_version": "1.0.0"})
+            check("админ задаёт ссылки на десктопные сборки",
+                  r.json()["macos_url"].endswith(".dmg"), r.text[:150])
+            r = await c.get("/internal/downloads", headers={"X-Internal-Secret": "smoke-secret"})
+            plats = {b["platform"] for b in r.json()}
+            check("бот отдаёт кнопки macOS и Linux",
+                  {"macos", "linux"} <= plats, str(plats))
+            await c.post("/api/admin/settings", headers=oauth,
+                         json={"macos_url": "", "linux_url": ""})
+
             r = await c.post("/api/admin/settings", headers=auth, json={"apk_url": "http://x"})
             check("настройки закрыты от обычных юзеров", r.status_code == 403)
 

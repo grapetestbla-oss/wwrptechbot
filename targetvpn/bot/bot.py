@@ -64,7 +64,7 @@ async def open_app(message: Message):
 
 @router.message(Command("download", "install"))
 async def download(message: Message):
-    """Кнопки со ссылками на сборки для Android, iOS и Windows."""
+    """Кнопки со ссылками на все выложенные сборки (Android, iOS, ПК)."""
     try:
         builds = await internal("GET", "/internal/downloads") or []
     except Exception:  # noqa: BLE001 - бэкенд мог перезапускаться

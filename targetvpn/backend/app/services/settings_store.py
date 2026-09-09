@@ -16,6 +16,10 @@ DEFAULTS: dict[str, str] = {
     "ios_version": "",
     "windows_url": "",
     "windows_version": "",
+    "macos_url": "",
+    "macos_version": "",
+    "linux_url": "",
+    "linux_version": "",
     # Сколько минут живёт код привязки приложения.
     "bind_code_ttl_min": "15",
 }
@@ -61,6 +65,8 @@ DOWNLOADS = [
     ("android", "apk_url", "apk_version", "🤖", "Android"),
     ("ios", "ios_url", "ios_version", "🍏", "iPhone / iPad"),
     ("windows", "windows_url", "windows_version", "🪟", "Windows"),
+    ("macos", "macos_url", "macos_version", "💻", "macOS"),
+    ("linux", "linux_url", "linux_version", "🐧", "Linux"),
 ]
 
 
