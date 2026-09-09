@@ -118,6 +118,46 @@ else
   warn "Нет $CREDS — пропускаем сверку с панелью"
 fi
 
+# --- 2.1 Пара ключей Reality ---------------------------------------------
+# publicKey в конфиге — просто текст, сервер работает по privateKey.
+# Если пара разошлась, клиента отвергнут, а поле в файле останется прежним.
+say "Сверяем пару ключей Reality на самой ноде"
+PRIV=$(grep -o '"privateKey"[^,]*' /var/lib/marzban/xray_config.json 2>/dev/null \
+  | head -1 | sed -E 's/.*:\s*"([^"]*)".*/\1/')
+if [[ -n "$PRIV" ]]; then
+  DERIVED=$(docker exec "$CONTAINER" xray x25519 -i "$PRIV" 2>/dev/null \
+    | sed -n 's/^Public key: //p' | tr -d '\r')
+  if [[ -z "$DERIVED" ]]; then
+    warn "Не удалось вычислить публичный ключ из приватного (другая версия xray)"
+  elif [[ "$DERIVED" == "$PBK" ]]; then
+    ok "Приватный ключ ноды соответствует ключу в подписке"
+  else
+    bad "Пара ключей Reality разошлась — клиента отвергают всегда"
+    echo "  из privateKey следует: $DERIVED"
+    echo "  клиентам выдаётся:     $PBK"
+    warn "Лечится перевыпуском инбаунда:"
+    warn "  rm /var/lib/marzban/xray_config.json && bash deploy/install_node.sh"
+    exit 1
+  fi
+fi
+
+# --- 2.2 Есть ли пользователь в работающем ядре --------------------------
+if [[ -n "${TOKEN:-}" ]]; then
+  say "Проверяем, попал ли пользователь в работающее ядро"
+  RUNNING=$(curl -s --max-time 10 -H "Authorization: Bearer $TOKEN" \
+    "http://127.0.0.1:${PANEL_PORT}/api/core/config")
+  if grep -q "$UUID" <<<"$RUNNING"; then
+    ok "UUID найден в конфигурации работающего ядра"
+  elif [[ -n "$RUNNING" && "$RUNNING" != *"detail"* ]]; then
+    bad "UUID отсутствует в работающем ядре — сервер не знает этого клиента"
+    warn "Marzban не применил пользователя. Помогает перезапуск ядра:"
+    warn "  curl -X POST -H \"Authorization: Bearer \$TOKEN\" http://127.0.0.1:${PANEL_PORT}/api/core/restart"
+    warn "или marzban restart"
+  else
+    warn "Панель не отдала конфигурацию ядра — пропускаем проверку"
+  fi
+fi
+
 # --- 3. Сайт-прикрытие Reality -------------------------------------------
 say "Проверяем сайт маскировки ($SNI:443) с самого сервера"
 if timeout 10 bash -c "cat < /dev/null > /dev/tcp/${SNI}/443" 2>/dev/null; then
