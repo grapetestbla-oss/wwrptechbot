@@ -1,0 +1,113 @@
+name: Build TargetVPN client (FlClashX)
+
+# Собирает ребрендированный клиент на ядре mihomo под Android, Windows,
+# Linux и macOS. iOS у этого проекта нет — для iPhone остаётся Happ.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Ветка или тег FlClashX"
+        required: false
+        default: "main"
+      release:
+        description: "Опубликовать релиз (true/false)"
+        required: false
+        default: "false"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: android
+          - os: ubuntu-latest
+            target: linux
+          - os: windows-latest
+            target: windows
+          - os: macos-latest
+            target: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Поставить Pillow (замена иконок)
+        run: pip install --quiet pillow
+
+      - uses: actions/setup-java@v4
+        if: matrix.target == 'android'
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Зависимости Linux
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev libayatana-appindicator3-dev
+
+      - name: Ребрендинг
+        run: python targetvpn/client/rebrand.py --work build/client --ref "${{ github.event.inputs.ref || 'main' }}"
+
+      - name: Сборка
+        working-directory: build/client
+        shell: bash
+        run: |
+          flutter pub get
+          case "${{ matrix.target }}" in
+            android) dart setup.dart android --arch arm64 ;;
+            linux)   dart setup.dart linux --arch amd64 ;;
+            windows) dart setup.dart windows --arch amd64 ;;
+            macos)   dart setup.dart macos --arch arm64 ;;
+          esac
+
+      - name: Собрать артефакты
+        shell: bash
+        run: |
+          mkdir -p dist
+          find build/client/dist build/client/build -maxdepth 3 \
+            \( -name "*.apk" -o -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" \
+               -o -name "*.zip" -o -name "*.deb" \) -exec cp {} dist/ \; 2>/dev/null || true
+          ls -la dist || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: targetvpn-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: warn
+          retention-days: 30
+
+  release:
+    needs: build
+    if: github.event.inputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Опубликовать релиз
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: client-${{ github.run_number }}
+          name: TargetVPN client ${{ github.run_number }}
+          body: |
+            Клиент TargetVPN на ядре mihomo — ребрендированная сборка FlClashX (GPL-3.0).
+            Исходники изменённой версии: targetvpn/client/rebrand.py в этом репозитории.
+          files: artifacts/**/*

@@ -143,6 +143,21 @@ async def main() -> None:
             r = await c.get(f"/sub/{sub_token}")
             check("ссылка-подписка работает", r.status_code == 200 and len(r.text) > 40)
 
+            r = await c.get(f"/sub/{sub_token}?format=clash")
+            check("подписка в формате Clash",
+                  r.status_code == 200 and "proxies:" in r.text and "type: vless" in r.text,
+                  r.text[:120])
+            check("в Clash-конфиге есть параметры reality",
+                  "reality-opts:" in r.text and "public-key:" in r.text)
+            check("локальные адреса идут мимо туннеля", "GEOIP,PRIVATE,DIRECT" in r.text)
+
+            r = await c.get(f"/sub/{sub_token}", headers={"User-Agent": "mihomo/1.18"})
+            check("клиент на mihomo получает YAML по своему User-Agent",
+                  "proxy-groups:" in r.text, r.text[:100])
+
+            r = await c.get(f"/sub/{sub_token}", headers={"User-Agent": "v2rayNG/1.9"})
+            check("остальным клиентам по-прежнему base64", "proxies:" not in r.text)
+
             r = await c.post(f"/api/devices/{devices[0]['id']}/refresh", headers=auth)
             check("перевыпуск ключа", r.status_code == 200)
             r = await c.delete(f"/api/devices/{devices[2]['id']}", headers=auth)

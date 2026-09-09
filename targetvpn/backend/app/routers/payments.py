@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db import get_session
 from ..models import Device, Notification, Payment, PaymentStatus, User
 from ..security import require_internal
-from ..services import billing, settings_store, subs
+from ..services import billing, clash, settings_store, subs
 
 log = logging.getLogger("payments")
 router = APIRouter(tags=["payments"])
@@ -83,8 +83,14 @@ async def tick(session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/sub/{token}", response_class=PlainTextResponse)
-async def subscription_feed(token: str, session: AsyncSession = Depends(get_session)):
-    """Ссылка-подписка для клиентов (v2rayNG / Hiddify / Streisand / TargetVPN)."""
+async def subscription_feed(token: str, format: str = "", user_agent: str = Header(default=""),
+                            session: AsyncSession = Depends(get_session)):
+    """Ссылка-подписка для клиентов.
+
+    Клиенты на ядре mihomo (FlClash и подобные) понимают только YAML-конфигурацию
+    Clash, остальные — список ссылок в base64. Формат выбирается по параметру
+    ?format=clash или по тому, чем представился клиент.
+    """
     user = (await session.execute(select(User).where(User.sub_token == token))).scalar_one_or_none()
     if user is None or user.is_banned:
         raise HTTPException(404, "Подписка не найдена")
@@ -94,6 +100,20 @@ async def subscription_feed(token: str, session: AsyncSession = Depends(get_sess
     devices = (await session.execute(select(Device).where(
         Device.user_id == user.id, Device.is_active.is_(True)).order_by(Device.id))).scalars().all()
     links = [d.config_url for d in devices if d.config_url]
+
+    wants_clash = format.lower() in {"clash", "yaml", "mihomo"} or any(
+        marker in user_agent.lower() for marker in ("clash", "mihomo", "flclash", "targetvpn-app"))
+    if wants_clash:
+        body = clash.render(links)
+        return PlainTextResponse(body, media_type="text/yaml; charset=utf-8", headers={
+            "profile-title": base64.b64encode("TargetVPN".encode()).decode(),
+            "profile-update-interval": "6",
+            "subscription-userinfo": (
+                f"upload=0; download={int(sum(d.used_traffic for d in devices))}; "
+                f"total={sub.traffic_gb * 1024 ** 3}; "
+                f"expire={int(subs.aware(sub.expires_at).timestamp())}"),
+        })
+
     payload = base64.b64encode("\n".join(links).encode()).decode()
     headers = {
         "profile-title": base64.b64encode("TargetVPN".encode()).decode(),
