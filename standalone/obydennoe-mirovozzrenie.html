@@ -1,0 +1,449 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Обыденное мировоззрение">
+<title>Обыденное мировоззрение</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400;1,7..72,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#EAE8EE;
+  --surface:#FBFAFC;
+  --surface-2:#F2F0F6;
+  --ink:#1E1B28;
+  --ink-soft:#544E66;
+  --ink-faint:#847D97;
+  --line:#CFCADA;
+  --src:#42549B;
+  --trait:#13715E;
+  --plus:#2C7449;
+  --minus:#A8442E;
+  --core-bg:#3A4C8A;
+  --core-fg:#F3F4FA;
+  --core-line:#26326A;
+  --shadow:0 1px 2px rgba(30,27,40,.06), 0 10px 28px -14px rgba(30,27,40,.28);
+}
+@media (prefers-color-scheme: dark){
+:root:not([data-theme="light"]){
+  --ground:#131019;
+  --surface:#1C1926;
+  --surface-2:#242030;
+  --ink:#E9E6F0;
+  --ink-soft:#ABA4BE;
+  --ink-faint:#867F99;
+  --line:#332E42;
+  --src:#93A5EC;
+  --trait:#48C2A6;
+  --plus:#5FC085;
+  --minus:#E58C71;
+  --core-bg:#93A5EC;
+  --core-fg:#14111C;
+  --core-line:#C3CDF7;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 12px 30px -16px rgba(0,0,0,.8);
+}
+}
+:root[data-theme="dark"]{
+  --ground:#131019;
+  --surface:#1C1926;
+  --surface-2:#242030;
+  --ink:#E9E6F0;
+  --ink-soft:#ABA4BE;
+  --ink-faint:#867F99;
+  --line:#332E42;
+  --src:#93A5EC;
+  --trait:#48C2A6;
+  --plus:#5FC085;
+  --minus:#E58C71;
+  --core-bg:#93A5EC;
+  --core-fg:#14111C;
+  --core-line:#C3CDF7;
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 12px 30px -16px rgba(0,0,0,.8);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--ground);color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;font-size:16px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1140px;margin:0 auto;padding-inline:20px;padding-block:0}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+h2{font-family:Literata,Georgia,serif;font-weight:600;font-size:1.6rem;margin:0;letter-spacing:-.01em}
+.sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.hint{color:var(--ink-faint);font-size:.85rem}
+
+/* hero */
+.hero{padding-block:clamp(40px,7vw,74px) 30px;border-bottom:1px solid var(--line)}
+.hero h1{
+  font-family:Literata,Georgia,serif;font-weight:600;font-size:clamp(2.2rem,6vw,3.8rem);
+  line-height:1.05;letter-spacing:-.02em;margin:0;text-wrap:balance;
+}
+.hero h1 em{font-style:italic;color:var(--src)}
+.hero .lead{max-width:58ch;margin:1.1rem 0 0;font-size:1.06rem;color:var(--ink-soft)}
+.proverb{
+  margin:26px 0 0;padding:16px 0 16px 22px;border-left:3px solid var(--src);
+  font-family:Literata,Georgia,serif;font-style:italic;font-size:1.22rem;line-height:1.45;max-width:46ch;
+}
+.proverb small{display:block;font-family:"IBM Plex Sans",sans-serif;font-style:normal;font-size:.82rem;color:var(--ink-faint);margin-top:.5rem;line-height:1.5}
+
+/* forms comparison */
+.forms{padding-block:48px 0}
+.forms-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0;border-top:1px solid var(--line)}
+.form-col{padding:20px 24px 22px 0;border-right:1px solid var(--line)}
+.form-col:last-child{border-right:0}
+.form-col.now{padding-left:20px;margin-left:-1px;border-left:3px solid var(--src);background:linear-gradient(180deg,var(--surface),transparent 70%)}
+.form-col h3{font-family:Literata,Georgia,serif;font-size:1.15rem;font-weight:600;margin:.45rem 0 .4rem}
+.form-col p{margin:0;color:var(--ink-soft);font-size:.94rem}
+@media (max-width:700px){.form-col{border-right:0;border-bottom:1px solid var(--line)}.form-col:last-child{border-bottom:0}}
+
+/* map */
+.map-section{padding-block:56px 8px}
+.map-scroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+svg.map{display:block;width:100%;min-width:780px;height:auto}
+.edge{stroke:var(--line);stroke-width:1.6;fill:none}
+.edge.draw{stroke-dasharray:1;stroke-dashoffset:1;animation:draw .95s cubic-bezier(.6,.05,.3,1) forwards;animation-delay:calc(.1s * var(--i))}
+.edge.strong{stroke-width:2.6;stroke:var(--src);opacity:.55}
+@keyframes draw{to{stroke-dashoffset:0}}
+.node{cursor:pointer;transform-box:fill-box;transform-origin:center;animation:pop .55s cubic-bezier(.2,.9,.3,1.1) backwards;animation-delay:calc(.55s + .06s * var(--i));transition:transform .2s}
+@keyframes pop{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+.node .box{fill:var(--surface);stroke:var(--nc);stroke-width:1.5;transition:fill .2s,stroke-width .2s}
+.node .label{font-family:"IBM Plex Sans",sans-serif;font-size:16px;font-weight:600;fill:var(--ink);text-anchor:middle;pointer-events:none}
+.node .pip{fill:var(--nc)}
+.node:hover{transform:translateY(-2px)}
+.node:hover .box,.node:focus-visible .box{fill:var(--surface-2);stroke-width:2.4}
+.node:focus-visible{outline:none}
+.node:focus-visible .box{stroke-dasharray:5 3}
+.node:not(.core)[aria-current="true"] .box{fill:var(--surface-2);stroke-width:3}
+.node[aria-current="true"] .pip{animation:pulse 1.9s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;r:5}50%{opacity:.3;r:8.5}}
+.n-src{--nc:var(--src)}.n-trait{--nc:var(--trait)}
+.node.core .box{fill:var(--core-bg);stroke:var(--core-line);stroke-width:2}
+.node.core .label{fill:var(--core-fg);font-size:21px}
+.node.core .sub{fill:var(--core-fg);opacity:.72;font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.18em;text-anchor:middle}
+.halo{fill:var(--src);opacity:.05;animation:breathe 8s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:.05}50%{transform:scale(1.14);opacity:.1}}
+.cap{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;text-anchor:middle}
+.cap.s{fill:var(--src)}.cap.t{fill:var(--trait)}
+
+/* panel */
+.panel{margin-top:26px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:24px clamp(18px,3vw,30px);box-shadow:var(--shadow)}
+.panel-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:26px 34px}
+@media (max-width:760px){.panel-grid{grid-template-columns:1fr;gap:20px}}
+.panel h3{font-family:Literata,Georgia,serif;font-size:1.7rem;font-weight:600;margin:.25rem 0 .6rem;letter-spacing:-.01em}
+.panel .kind{color:var(--pc,var(--src))}
+.panel .def{margin:0;font-size:1.02rem}
+.panel .aside{border-left:2px solid var(--pc,var(--src));padding-left:18px}
+.panel .aside h4{margin:0 0 .35rem;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;font-family:"IBM Plex Mono",monospace;font-weight:500;color:var(--ink-faint)}
+.panel .aside p{margin:0 0 1.1rem;color:var(--ink-soft);font-size:.95rem}
+.panel .aside p:last-child{margin-bottom:0}
+.panel .aside q{font-family:Literata,Georgia,serif;font-style:italic}
+.fade{animation:fade .32s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* scales */
+.scales{padding-block:60px 0}
+.scales-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:22px;margin-top:20px}
+.side{border-top:3px solid var(--sc);padding-top:18px}
+.side.pro{--sc:var(--plus)}
+.side.con{--sc:var(--minus)}
+.side > .mono{color:var(--sc)}
+.side h3{font-family:Literata,Georgia,serif;font-size:1.3rem;font-weight:600;margin:.4rem 0 1rem}
+.side dl{margin:0}
+.side dt{font-weight:600;margin-top:1rem}
+.side dt:first-of-type{margin-top:0}
+.side dd{margin:.15rem 0 0;color:var(--ink-soft);font-size:.94rem}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.chip{
+  font-family:Literata,Georgia,serif;font-style:italic;font-size:.92rem;
+  background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 14px;
+  transition:transform .2s cubic-bezier(.2,.9,.3,1.1),border-color .2s,color .2s;cursor:default;
+}
+.chip:hover{transform:translateY(-2px) rotate(-1.2deg);border-color:var(--minus);color:var(--minus)}
+
+/* closing */
+.closing{padding-block:60px clamp(48px,7vw,84px)}
+.closing blockquote{
+  margin:0;font-family:Literata,Georgia,serif;font-size:clamp(1.25rem,2.6vw,1.75rem);line-height:1.42;
+  max-width:34ch;letter-spacing:-.01em;
+}
+.closing .box2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:30px;align-items:start;
+  background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:clamp(22px,3.4vw,36px)}
+@media (max-width:720px){.closing .box2{grid-template-columns:1fr;gap:18px}}
+.closing p{margin:0 0 1rem;color:var(--ink-soft)}
+.closing p:last-child{margin-bottom:0}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before{animation:none!important;transition:none!important}
+  .edge.draw{stroke-dashoffset:0}
+}
+</style>
+<style>html{color-scheme:light dark}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <h1>Обыденное <em>мировоззрение</em></h1>
+    <p class="lead">Третья, самая массовая и естественная форма мировоззрения. Оно складывается у каждого человека стихийно, в процессе повседневной социализации, — это базовый слой сознания, который позволяет ориентироваться в мире без всякой специальной подготовки. Именно с него начинается формирование личности задолго до того, как мы впервые задумываемся о философии или устройстве вселенной.</p>
+    <p class="proverb">«Не зная броду, не суйся в воду»
+      <small>Мудрость о необходимости осторожности и осмотрительности становится частью нашего мировоззрения задолго до того, как мы начинаем изучать историю или социологию.</small>
+    </p>
+  </header>
+
+  <section class="forms">
+    <div class="sec-head"><h2>Три формы — и чем отличается эта</h2><div class="hint">Сравнение по способу возникновения</div></div>
+    <div class="forms-row">
+      <div class="form-col">
+        <div class="mono">форма первая</div>
+        <h3>Мифологическое</h3>
+        <p>Требует особого символического мышления: мир объясняется через образ и сказание.</p>
+      </div>
+      <div class="form-col">
+        <div class="mono">форма вторая</div>
+        <h3>Религиозное</h3>
+        <p>Предполагает иррациональную веру и следование догматам.</p>
+      </div>
+      <div class="form-col now">
+        <div class="mono" style="color:var(--src)">форма третья · эта</div>
+        <h3>Обыденное, житейское</h3>
+        <p>Никем не преподаётся и ничего не требует: складывается само, у каждого, из повседневной жизни.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="map-section">
+    <div class="sec-head">
+      <h2>Ментальная карта</h2>
+      <div class="hint">Кликните узел · на телефоне карту можно листать вбок</div>
+    </div>
+
+    <div class="map-scroll">
+      <svg class="map" viewBox="0 0 1080 740" role="group" aria-label="Ментальная карта: обыденное мировоззрение">
+        <g class="edges">
+          <line class="edge draw" style="--i:1" pathLength="1" x1="540" y1="350" x2="150" y2="75"/>
+          <line class="edge draw" style="--i:2" pathLength="1" x1="540" y1="350" x2="150" y2="185"/>
+          <line class="edge draw" style="--i:3" pathLength="1" x1="540" y1="350" x2="150" y2="295"/>
+          <line class="edge draw" style="--i:4" pathLength="1" x1="540" y1="350" x2="150" y2="405"/>
+          <line class="edge draw" style="--i:5" pathLength="1" x1="540" y1="350" x2="150" y2="515"/>
+          <line class="edge draw strong" style="--i:6" pathLength="1" x1="540" y1="350" x2="150" y2="625"/>
+          <line class="edge draw" style="--i:7" pathLength="1" x1="540" y1="350" x2="930" y2="130"/>
+          <line class="edge draw" style="--i:8" pathLength="1" x1="540" y1="350" x2="930" y2="280"/>
+          <line class="edge draw" style="--i:9" pathLength="1" x1="540" y1="350" x2="930" y2="430"/>
+          <line class="edge draw" style="--i:10" pathLength="1" x1="540" y1="350" x2="930" y2="580"/>
+        </g>
+
+        <text class="cap s" x="150" y="24">откуда берётся</text>
+        <text class="cap t" x="930" y="24">какое оно</text>
+
+        <circle class="halo" cx="540" cy="350" r="128"/>
+
+        <g class="node core" data-key="core" tabindex="0" role="button" aria-label="Обыденное мировоззрение" aria-current="true" style="--i:0">
+          <rect class="box" x="400" y="300" width="280" height="100" rx="14"/>
+          <text class="sub" x="540" y="332">базовый слой сознания</text>
+          <text class="label" x="540" y="362">Обыденное</text>
+          <text class="label" x="540" y="386">мировоззрение</text>
+        </g>
+
+        <g class="node n-src" data-key="yazyk" tabindex="0" role="button" aria-label="Язык и фольклор" style="--i:1">
+          <rect class="box" x="25" y="41" width="250" height="68" rx="11"/>
+          <circle class="pip" cx="47" cy="75" r="5"/>
+          <text class="label" x="160" y="81">Язык и фольклор</text>
+        </g>
+        <g class="node n-src" data-key="semya" tabindex="0" role="button" aria-label="Семейное воспитание" style="--i:2">
+          <rect class="box" x="25" y="151" width="250" height="68" rx="11"/>
+          <circle class="pip" cx="47" cy="185" r="5"/>
+          <text class="label" x="160" y="191">Семейное воспитание</text>
+        </g>
+        <g class="node n-src" data-key="shkola" tabindex="0" role="button" aria-label="Школа и сверстники" style="--i:3">
+          <rect class="box" x="25" y="261" width="250" height="68" rx="11"/>
+          <circle class="pip" cx="47" cy="295" r="5"/>
+          <text class="label" x="160" y="301">Школа и сверстники</text>
+        </g>
+        <g class="node n-src" data-key="priroda" tabindex="0" role="button" aria-label="Природа и искусство" style="--i:4">
+          <rect class="box" x="25" y="371" width="250" height="68" rx="11"/>
+          <circle class="pip" cx="47" cy="405" r="5"/>
+          <text class="label" x="160" y="411">Природа и искусство</text>
+        </g>
+        <g class="node n-src" data-key="smi" tabindex="0" role="button" aria-label="СМИ и интернет" style="--i:5">
+          <rect class="box" x="25" y="481" width="250" height="68" rx="11"/>
+          <circle class="pip" cx="47" cy="515" r="5"/>
+          <text class="label" x="160" y="521">СМИ и интернет</text>
+        </g>
+        <g class="node n-src" data-key="deyatelnost" tabindex="0" role="button" aria-label="Повседневная деятельность" style="--i:6">
+          <rect class="box" x="25" y="591" width="250" height="68" rx="11"/>
+          <circle class="pip" cx="47" cy="625" r="5"/>
+          <text class="label" x="160" y="619">Повседневная</text>
+          <text class="label" x="160" y="641">деятельность</text>
+        </g>
+
+        <g class="node n-trait" data-key="stihiynost" tabindex="0" role="button" aria-label="Стихийность" style="--i:7">
+          <rect class="box" x="805" y="96" width="250" height="68" rx="11"/>
+          <circle class="pip" cx="1033" cy="130" r="5"/>
+          <text class="label" x="918" y="136">Стихийность</text>
+        </g>
+        <g class="node n-trait" data-key="pragmatizm" tabindex="0" role="button" aria-label="Практичность" style="--i:8">
+          <rect class="box" x="805" y="246" width="250" height="68" rx="11"/>
+          <circle class="pip" cx="1033" cy="280" r="5"/>
+          <text class="label" x="918" y="286">Практичность</text>
+        </g>
+        <g class="node n-trait" data-key="fragmentarnost" tabindex="0" role="button" aria-label="Фрагментарность" style="--i:9">
+          <rect class="box" x="805" y="396" width="250" height="68" rx="11"/>
+          <circle class="pip" cx="1033" cy="430" r="5"/>
+          <text class="label" x="918" y="436">Фрагментарность</text>
+        </g>
+        <g class="node n-trait" data-key="izmenchivost" tabindex="0" role="button" aria-label="Изменчивость" style="--i:10">
+          <rect class="box" x="805" y="546" width="250" height="68" rx="11"/>
+          <circle class="pip" cx="1033" cy="580" r="5"/>
+          <text class="label" x="918" y="586">Изменчивость</text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="panel" id="panel" aria-live="polite">
+      <div class="panel-grid">
+        <div>
+          <div class="mono kind" id="p-kind"></div>
+          <h3 id="p-title"></h3>
+          <p class="def" id="p-def"></p>
+        </div>
+        <div class="aside">
+          <h4 id="p-h1">Как это работает</h4>
+          <p id="p-link"></p>
+          <h4>Пример из текста</h4>
+          <p id="p-ex"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="scales">
+    <div class="sec-head"><h2>Сильные и слабые стороны</h2><div class="hint">Одно и то же свойство бывает и плюсом, и ловушкой</div></div>
+    <div class="scales-grid">
+      <div class="side pro">
+        <div class="mono">достоинства</div>
+        <h3>Почему без него нельзя</h3>
+        <dl>
+          <dt>Скорость и эффективность</dt>
+          <dd>Следуя житейской привычке, мы нередко действуем эффективнее, чем если бы пытались анализировать ситуацию с нуля.</dd>
+          <dt>Ощущение стабильности</dt>
+          <dd>Привычные установки создают чувство предсказуемости мира: веря, что «честный труд всегда вознаграждается», легче справляться с ежедневными трудностями.</dd>
+          <dt>Фундамент, а не «низший этаж»</dt>
+          <dd>Это практический компас, позволяющий ориентироваться в мире ежесекундно, — пока наука и философия размышляют о глобальных законах бытия.</dd>
+        </dl>
+      </div>
+      <div class="side con">
+        <div class="mono">ограничения</div>
+        <h3>Где оно подводит</h3>
+        <dl>
+          <dt>Несистемность</dt>
+          <dd>Не каждый способен изложить свои жизненные принципы стройной системой: чаще это смутные идеи, разрозненные образы и эмоции, которые противоречат друг другу.</dd>
+          <dt>Суеверия и предрассудки</dt>
+          <dd>Наряду с полезной мудростью впитываются готовые ярлыки. Они экономят мышление, заменяя анализ личности одним словом.</dd>
+          <dt>Живучесть заблуждений</dt>
+          <dd>Они подкрепляются личным опытом, который на самом деле оказался случайным совпадением.</dd>
+        </dl>
+        <div class="chips">
+          <span class="chip">«все блондинки глупы»</span>
+          <span class="chip">«отличники — зануды»</span>
+          <span class="chip">«все продавцы обманывают»</span>
+          <span class="chip">«чем больше таблеток выпьешь, тем быстрее вылечишься»</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="closing">
+    <div class="box2">
+      <blockquote>Житейская картина мира перекраивается всю жизнь.</blockquote>
+      <div>
+        <p>Новые впечатления, события, пережитые кризисы — всё это меняет то, что казалось очевидным. То, что было незыблемым в юности, может быть полностью пересмотрено после первого серьёзного разочарования.</p>
+        <p>Поэтому обыденное мировоззрение — не застывший набор правил, а живой слой сознания, который человек всё время достраивает опытом.</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+const DATA = {
+  core:{t:"Обыденное мировоззрение",k:"ядро карты",c:"var(--src)",h:"Главная черта",
+    d:"Самая массовая и естественная форма мировоззрения, её же называют житейской. В отличие от мифологии, требующей особого символического мышления, и религии, предполагающей иррациональную веру и следование догматам, обыденное мировоззрение складывается у каждого человека стихийно — в процессе повседневной социализации.",
+    l:"Это базовый слой сознания, который делает нас способными ориентироваться в мире без специальной подготовки. С него начинается формирование личности задолго до первых мыслей о философии.",
+    e:"Слева на карте — источники, из которых оно собирается, справа — его свойства."},
+
+  yazyk:{t:"Язык и фольклор",k:"источник",c:"var(--src)",h:"Как это работает",
+    d:"Ключевую роль играет освоение родного языка и культуры. С самого раннего детства, слушая сказки и заучивая народные пословицы и поговорки, человек впитывает традиции мышления и ценностные ориентиры своего народа.",
+    l:"Готовая мудрость входит в сознание раньше любых научных знаний — ребёнок пользуется ею, ещё не понимая, откуда она взялась.",
+    e:"<q>«Не зная броду, не суйся в воду»</q> — о необходимости осторожности и осмотрительности."},
+
+  semya:{t:"Семейное воспитание",k:"источник",c:"var(--src)",h:"Как это работает",
+    d:"Родители транслируют детям свои ценностные установки, далеко не всегда формулируя их прямо. Порой одно многократно повторённое в детстве суждение определяет отношение человека к деньгам, труду или отношениям с людьми на всю жизнь.",
+    l:"Влияние тем сильнее, чем меньше оно заметно: усваивается не урок, а интонация, с которой в доме говорили о работе или о соседях.",
+    e:"Взрослый ловит себя на том, что повторяет фразу отца о деньгах — и никогда её не проверял."},
+
+  shkola:{t:"Школа и сверстники",k:"источник",c:"var(--src)",h:"Как это работает",
+    d:"Школьное образование и круг сверстников вносят свой вклад: здесь усваиваются не только формальные знания, но и негласные правила социального взаимодействия — мы учимся выстраивать иерархию, определять «своих» и «чужих».",
+    l:"Подростковая среда способна переписать даже то, что внушила семья: одобрение ровесников в этом возрасте весит больше.",
+    e:"Подростковая субкультура может привить убеждение, что «быть умником — немодно», или наоборот."},
+
+  priroda:{t:"Природа и искусство",k:"источник",c:"var(--src)",h:"Как это работает",
+    d:"Соприкосновение с природой и искусством — наблюдение за сменой сезонов, созерцание заката, восприятие музыкального произведения — влияет на эмоциональный фон человека и формирует его эстетический вкус.",
+    l:"Эстетический вкус — тоже элемент мировоззрения: он задаёт, что человек считает красивым, уместным и правильным.",
+    e:"Впечатление от музыки или заката не даёт знаний, но меняет то, как человек смотрит на мир дальше."},
+
+  smi:{t:"СМИ и интернет",k:"источник · современность",c:"var(--src)",h:"Как это работает",
+    d:"В современном мире добавилось влияние средств массовой информации и интернета: блоги, новостные ленты и социальные сети стали мощнейшими каналами формирования обыденного сознания.",
+    l:"Повторяющиеся нарративы работают как воспитание: то, что видишь каждый день, начинает казаться правдой без всякой проверки.",
+    e:"У человека возникает ощущение, что «мир становится опаснее» или что «успешный человек должен выглядеть определённым образом», — даже если реальные факты и статистика говорят об ином."},
+
+  deyatelnost:{t:"Повседневная деятельность",k:"источник · определяющий",c:"var(--src)",h:"Почему она определяющая",
+    d:"Определяющую роль в формировании обыденного мировоззрения играет сама повседневная деятельность человека. Открывая те или иные свойства вещей и явлений в процессе труда, быта и общения, мы выделяем для себя наиболее значимые из них.",
+    l:"Именно эти отобранные опытом свойства образуют основное содержание личных представлений человека об окружающем мире — на карте эта связь выделена цветом.",
+    e:"Мастер знает о материале то, чего нет в учебнике: он выяснил это руками."},
+
+  stihiynost:{t:"Стихийность",k:"свойство",c:"var(--trait)",h:"Что из этого следует",
+    d:"Обыденное мировоззрение никем не преподаётся и не требует подготовки: оно складывается у каждого человека само, в процессе повседневной социализации.",
+    l:"Отсюда его массовость: оно есть у всех без исключения, независимо от образования.",
+    e:"Человек уверенно судит о людях и деньгах, никогда не открывав ни одного учебника по психологии или экономике."},
+
+  pragmatizm:{t:"Практичность",k:"свойство",c:"var(--trait)",h:"Что из этого следует",
+    d:"Это мировоззрение носит ярко выраженный прагматический характер: оно отвечает на вопрос «Как это работает в моей жизни?», а не «Каковы законы бытия?».",
+    l:"Благодаря этому человек принимает решения в условиях неопределённости быстро — опираясь на интуицию и прошлый опыт, а не на сложные теоретические расчёты.",
+    e:"В незнакомой ситуации мы действуем «как обычно» — и чаще всего успеваем вовремя."},
+
+  fragmentarnost:{t:"Фрагментарность",k:"свойство · слабое место",c:"var(--trait)",h:"Что из этого следует",
+    d:"Не каждый способен осознать и изложить свои жизненные принципы в виде целостной стройной системы. Обыденное мировоззрение нередко фрагментарно и противоречиво: оно состоит из смутных идей, разрозненных образов и эмоциональных переживаний, которые не всегда удаётся чётко сформулировать.",
+    l:"Из-за этой рыхлости рядом с полезной житейской мудростью спокойно уживаются суеверия, стереотипы и предрассудки.",
+    e:"Человек одновременно верит и что «деньги — не главное», и что «без денег ты никто»."},
+
+  izmenchivost:{t:"Изменчивость",k:"свойство",c:"var(--trait)",h:"Что из этого следует",
+    d:"Обыденное мировоззрение развивается на протяжении всей жизни: новые впечатления и события, пережитые кризисы — всё это перекраивает житейскую картину мира.",
+    l:"Значит, его нельзя считать окончательным: любой взгляд на мир здесь — промежуточный итог прожитого.",
+    e:"То, что казалось незыблемым в юности, может быть полностью пересмотрено после первого серьёзного разочарования."}
+};
+
+const panel = document.getElementById("panel");
+function show(key){
+  const d = DATA[key]; if(!d) return;
+  panel.style.setProperty("--pc", d.c);
+  document.getElementById("p-kind").textContent = d.k;
+  document.getElementById("p-title").textContent = d.t;
+  document.getElementById("p-def").textContent = d.d;
+  document.getElementById("p-h1").textContent = d.h;
+  document.getElementById("p-link").textContent = d.l;
+  document.getElementById("p-ex").innerHTML = d.e;
+  const g = panel.querySelector(".panel-grid");
+  g.classList.remove("fade"); void g.offsetWidth; g.classList.add("fade");
+  document.querySelectorAll(".node").forEach(n=>n.setAttribute("aria-current", String(n.dataset.key === key)));
+}
+document.querySelectorAll(".node").forEach(n=>{
+  n.addEventListener("click", ()=>show(n.dataset.key));
+  n.addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); show(n.dataset.key); }});
+});
+show("core");
+</script>
+</body>
+</html>

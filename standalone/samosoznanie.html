@@ -1,0 +1,411 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Самосознание человека">
+<title>Самосознание человека</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#E7ECEE;
+  --surface:#FAFBFC;
+  --surface-2:#F0F3F5;
+  --ink:#14202A;
+  --ink-soft:#4C6070;
+  --ink-faint:#7A8B97;
+  --line:#C7D2D8;
+  --base:#186F81;
+  --self:#8E4270;
+  --env:#A75F24;
+  --core-bg:#14202A;
+  --core-fg:#F2F5F6;
+  --core-ring:#C8842F;
+  --shadow:0 1px 2px rgba(20,32,42,.06), 0 8px 24px -12px rgba(20,32,42,.22);
+}
+@media (prefers-color-scheme: dark){
+:root:not([data-theme="light"]){
+  --ground:#0D151B;
+  --surface:#16212A;
+  --surface-2:#1B2832;
+  --ink:#E3EAEE;
+  --ink-soft:#A0B1BC;
+  --ink-faint:#7B8D99;
+  --line:#2B3A45;
+  --base:#5CB8C9;
+  --self:#DB8CB6;
+  --env:#E39A56;
+  --core-bg:#E3EAEE;
+  --core-fg:#0D151B;
+  --core-ring:#E3A455;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0D151B;
+  --surface:#16212A;
+  --surface-2:#1B2832;
+  --ink:#E3EAEE;
+  --ink-soft:#A0B1BC;
+  --ink-faint:#7B8D99;
+  --line:#2B3A45;
+  --base:#5CB8C9;
+  --self:#DB8CB6;
+  --env:#E39A56;
+  --core-bg:#E3EAEE;
+  --core-fg:#0D151B;
+  --core-ring:#E3A455;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.7);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  font-size:16px;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1140px;margin:0 auto;padding-inline:20px;padding-block:0}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+
+/* ---------- hero ---------- */
+.hero{padding-block:clamp(40px,7vw,76px) 28px;border-bottom:1px solid var(--line)}
+.hero h1{
+  font-family:Literata,Georgia,serif;
+  font-weight:600;
+  font-size:clamp(2.3rem,6.4vw,4rem);
+  line-height:1.04;
+  letter-spacing:-.02em;
+  margin:.5rem 0 0;
+  text-wrap:balance;
+}
+.hero h1 em{font-style:italic;color:var(--base)}
+.hero p.lead{
+  max-width:56ch;margin:1.1rem 0 0;font-size:1.06rem;color:var(--ink-soft);
+}
+.meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:22px}
+.meta span{display:inline-flex;align-items:center;gap:7px}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dot.b{background:var(--base)}.dot.s{background:var(--self)}.dot.e{background:var(--env)}
+
+/* ---------- map ---------- */
+.map-section{padding-block:44px 8px}
+.sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.sec-head h2{
+  font-family:Literata,Georgia,serif;font-weight:600;font-size:1.6rem;margin:0;letter-spacing:-.01em;
+}
+.hint{color:var(--ink-faint);font-size:.85rem}
+.map-scroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+svg.map{display:block;width:100%;min-width:760px;height:auto}
+
+.edge{stroke:var(--line);stroke-width:1.6;fill:none;transition:stroke .25s,stroke-width .25s}
+.edge.draw{stroke-dasharray:1;stroke-dashoffset:1;animation:draw .9s cubic-bezier(.6,.05,.3,1) forwards;animation-delay:calc(.12s * var(--i))}
+@keyframes draw{to{stroke-dashoffset:0}}
+
+.node{cursor:pointer;transform-box:fill-box;transform-origin:center;animation:pop .55s cubic-bezier(.2,.9,.3,1.1) backwards;animation-delay:calc(.6s + .07s * var(--i))}
+@keyframes pop{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
+.node .box{fill:var(--surface);stroke:var(--nc);stroke-width:1.5;transition:fill .2s,stroke-width .2s}
+.node .label{font-family:"IBM Plex Sans",sans-serif;font-size:17px;font-weight:600;fill:var(--ink);text-anchor:middle;pointer-events:none}
+.node .pip{fill:var(--nc)}
+.node:hover .box,.node:focus-visible .box{fill:var(--surface-2);stroke-width:2.4}
+.node:hover,.node:focus-visible{transform:translateY(-2px)}
+.node:focus-visible{outline:none}
+.node:focus-visible .box{stroke-dasharray:5 3}
+.node:not(.core)[aria-current="true"] .box{fill:var(--surface-2);stroke-width:3}
+.node[aria-current="true"] .pip{animation:pulse 1.9s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;r:5}50%{opacity:.35;r:8}}
+.n-base{--nc:var(--base)}.n-self{--nc:var(--self)}.n-env{--nc:var(--env)}
+
+.node.core .box{fill:var(--core-bg);stroke:var(--core-ring);stroke-width:2.5}
+.node.core .label{fill:var(--core-fg);font-size:22px;letter-spacing:.01em}
+.node.core .sub{fill:var(--core-ring);font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.18em;text-anchor:middle}
+.halo{fill:var(--core-ring);opacity:.05;animation:breathe 7s ease-in-out infinite}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:.06}50%{transform:scale(1.13);opacity:.12}}
+.cap{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;text-anchor:middle}
+.cap.b{fill:var(--base)}.cap.s{fill:var(--self)}.cap.e{fill:var(--env)}
+
+/* ---------- detail panel ---------- */
+.panel{
+  margin-top:26px;background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:24px clamp(18px,3vw,30px);box-shadow:var(--shadow);
+}
+.panel-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:26px 34px}
+@media (max-width:760px){.panel-grid{grid-template-columns:1fr;gap:20px}}
+.panel h3{
+  font-family:Literata,Georgia,serif;font-size:1.75rem;font-weight:600;margin:.25rem 0 .6rem;letter-spacing:-.01em;
+}
+.panel .kind{color:var(--pc,var(--base))}
+.panel .def{margin:0;color:var(--ink);font-size:1.02rem}
+.panel .aside{border-left:2px solid var(--pc,var(--base));padding-left:18px}
+.panel .aside h4{margin:0 0 .35rem;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;font-family:"IBM Plex Mono",monospace;font-weight:500;color:var(--ink-faint)}
+.panel .aside p{margin:0 0 1.1rem;color:var(--ink-soft);font-size:.95rem}
+.panel .aside p:last-child{margin-bottom:0}
+.fade{animation:fade .32s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ---------- chain ---------- */
+.chain-section{padding-block:56px 10px}
+.chain{list-style:none;margin:20px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0}
+.chain li{position:relative;padding:0 22px 0 0;border-top:2px solid var(--line)}
+.chain li::before{
+  content:"";position:absolute;top:-2px;left:0;height:2px;width:100%;background:var(--self);
+  transform-origin:left;animation:grow .8s cubic-bezier(.6,.05,.3,1) backwards;animation-delay:calc(.1s * var(--i));
+  font-size:0;
+}
+@keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.chain .num{font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.14em;color:var(--self);display:block;margin-top:14px}
+.chain strong{display:block;font-family:Literata,Georgia,serif;font-size:1.12rem;font-weight:600;margin:.3rem 0 .35rem}
+.chain p{margin:0 0 4px;color:var(--ink-soft);font-size:.92rem}
+
+/* ---------- glossary ---------- */
+.gloss-section{padding-block:56px 70px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px;margin-top:20px}
+.card{
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px 20px 22px;
+  transition:transform .25s cubic-bezier(.2,.9,.3,1),box-shadow .25s,border-color .25s;
+}
+.card:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:var(--cc)}
+.card .tag{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--cc)}
+.card h3{font-family:Literata,Georgia,serif;font-size:1.2rem;font-weight:600;margin:.45rem 0 .5rem;letter-spacing:-.01em}
+.card p{margin:0;color:var(--ink-soft);font-size:.93rem}
+.card p.ex{margin-top:.7rem;padding-top:.7rem;border-top:1px dashed var(--line);color:var(--ink-faint);font-size:.88rem}
+.card p.ex b{font-weight:500;color:var(--ink-soft)}
+.c-base{--cc:var(--base)}.c-self{--cc:var(--self)}.c-env{--cc:var(--env)}
+
+footer{border-top:1px solid var(--line);padding-block:26px 46px;color:var(--ink-faint);font-size:.86rem}
+footer p{margin:0 0 .4rem;max-width:70ch}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before{animation:none!important;transition:none!important}
+  .edge.draw{stroke-dashoffset:0}
+}
+</style>
+<style>html{color-scheme:light dark}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="mono">обществознание · кластер · 9 терминов</div>
+    <h1>Самосознание <em>человека</em></h1>
+    <p class="lead">Карта того, как из общего потока психики вырастает знание человека о самом себе: что служит ему основой, из чего складывается образ «Я» и что заставляет этот образ меняться. Нажмите любой узел карты — внизу появится пояснение.</p>
+    <div class="meta mono">
+      <span><i class="dot b"></i>основа психики</span>
+      <span><i class="dot s"></i>структура «Я»</span>
+      <span><i class="dot e"></i>среда и механизм</span>
+    </div>
+  </header>
+
+  <section class="map-section">
+    <div class="sec-head">
+      <h2>Ментальная карта</h2>
+      <div class="hint">Кликните узел · на телефоне карту можно листать вбок</div>
+    </div>
+
+    <div class="map-scroll">
+      <svg class="map" viewBox="0 0 1080 730" role="group" aria-label="Ментальная карта: самосознание человека">
+        <g class="edges">
+          <line class="edge draw" style="--i:1" pathLength="1" x1="540" y1="300" x2="155" y2="95"/>
+          <line class="edge draw" style="--i:2" pathLength="1" x1="540" y1="300" x2="155" y2="245"/>
+          <line class="edge draw" style="--i:3" pathLength="1" x1="540" y1="300" x2="155" y2="395"/>
+          <line class="edge draw" style="--i:4" pathLength="1" x1="540" y1="300" x2="925" y2="95"/>
+          <line class="edge draw" style="--i:5" pathLength="1" x1="540" y1="300" x2="925" y2="245"/>
+          <line class="edge draw" style="--i:6" pathLength="1" x1="540" y1="300" x2="925" y2="395"/>
+          <line class="edge draw" style="--i:7" pathLength="1" x1="540" y1="300" x2="340" y2="620"/>
+          <line class="edge draw" style="--i:8" pathLength="1" x1="540" y1="300" x2="740" y2="620"/>
+        </g>
+
+        <text class="cap b" x="155" y="30">основа психики</text>
+        <text class="cap s" x="925" y="30">структура «я»</text>
+        <text class="cap e" x="540" y="706">среда и механизм</text>
+
+        <circle class="halo" cx="540" cy="300" r="120" style="transform-box:fill-box;transform-origin:center"/>
+
+        <g class="node core" data-key="samosoznanie" tabindex="0" role="button" aria-label="Самосознание" aria-current="true" style="--i:0">
+          <rect class="box" x="400" y="252" width="280" height="96" rx="14"/>
+          <text class="sub" x="540" y="284">ядро</text>
+          <text class="label" x="540" y="315">Самосознание</text>
+        </g>
+
+        <g class="node n-base" data-key="soznanie" tabindex="0" role="button" aria-label="Сознание" style="--i:1">
+          <rect class="box" x="30" y="57" width="250" height="76" rx="11"/>
+          <circle class="pip" cx="52" cy="95" r="5"/>
+          <text class="label" x="167" y="101">Сознание</text>
+        </g>
+
+        <g class="node n-base" data-key="bessoznatelnoe" tabindex="0" role="button" aria-label="Бессознательное" style="--i:2">
+          <rect class="box" x="30" y="207" width="250" height="76" rx="11"/>
+          <circle class="pip" cx="52" cy="245" r="5"/>
+          <text class="label" x="167" y="251">Бессознательное</text>
+        </g>
+
+        <g class="node n-base" data-key="kollektivnoe" tabindex="0" role="button" aria-label="Коллективное бессознательное" style="--i:3">
+          <rect class="box" x="30" y="357" width="250" height="76" rx="11"/>
+          <circle class="pip" cx="52" cy="395" r="5"/>
+          <text class="label" x="167" y="389">Коллективное</text>
+          <text class="label" x="167" y="412">бессознательное</text>
+        </g>
+
+        <g class="node n-self" data-key="ya-obrazy" tabindex="0" role="button" aria-label="Я-образы" style="--i:4">
+          <rect class="box" x="800" y="57" width="250" height="76" rx="11"/>
+          <circle class="pip" cx="1028" cy="95" r="5"/>
+          <text class="label" x="913" y="101">Я-образы</text>
+        </g>
+
+        <g class="node n-self" data-key="ya-koncepciya" tabindex="0" role="button" aria-label="Я-концепция" style="--i:5">
+          <rect class="box" x="800" y="207" width="250" height="76" rx="11"/>
+          <circle class="pip" cx="1028" cy="245" r="5"/>
+          <text class="label" x="913" y="251">Я-концепция</text>
+        </g>
+
+        <g class="node n-self" data-key="samoocenka" tabindex="0" role="button" aria-label="Самооценка" style="--i:6">
+          <rect class="box" x="800" y="357" width="250" height="76" rx="11"/>
+          <circle class="pip" cx="1028" cy="395" r="5"/>
+          <text class="label" x="913" y="401">Самооценка</text>
+        </g>
+
+        <g class="node n-env" data-key="obshestvennoe" tabindex="0" role="button" aria-label="Общественное сознание" style="--i:7">
+          <rect class="box" x="215" y="582" width="250" height="76" rx="11"/>
+          <circle class="pip" cx="237" cy="620" r="5"/>
+          <text class="label" x="340" y="614">Общественное</text>
+          <text class="label" x="340" y="637">сознание</text>
+        </g>
+
+        <g class="node n-env" data-key="refleksiya" tabindex="0" role="button" aria-label="Рефлексия" style="--i:8">
+          <rect class="box" x="615" y="582" width="250" height="76" rx="11"/>
+          <circle class="pip" cx="637" cy="620" r="5"/>
+          <text class="label" x="740" y="626">Рефлексия</text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="panel" id="panel" aria-live="polite">
+      <div class="panel-grid">
+        <div>
+          <div class="mono kind" id="p-kind"></div>
+          <h3 id="p-title"></h3>
+          <p class="def" id="p-def"></p>
+        </div>
+        <div class="aside">
+          <h4>Связь с самосознанием</h4>
+          <p id="p-link"></p>
+          <h4>Пример</h4>
+          <p id="p-ex"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="chain-section">
+    <div class="sec-head">
+      <h2>Как «Я» собирается: четыре шага</h2>
+      <div class="hint">Порядок здесь важен — каждый шаг опирается на предыдущий</div>
+    </div>
+    <ol class="chain">
+      <li data-step="" style="--i:1"><span class="num">шаг 01</span><strong>Взгляд со стороны</strong><p>Ребёнок видит реакцию близких и узнаёт, какой он. Так рождается «зеркальное Я».</p></li>
+      <li data-step="" style="--i:2"><span class="num">шаг 02</span><strong>Отдельные я-образы</strong><p>Накапливаются представления: я-реальное, я-идеальное, я в глазах других.</p></li>
+      <li data-step="" style="--i:3"><span class="num">шаг 03</span><strong>Я-концепция</strong><p>Образы складываются в устойчивую систему — относительно целостный портрет себя.</p></li>
+      <li data-step="" style="--i:4"><span class="num">шаг 04</span><strong>Самооценка и рефлексия</strong><p>Человек оценивает этот портрет и, размышляя о себе, перестраивает его заново.</p></li>
+    </ol>
+  </section>
+
+  <section class="gloss-section">
+    <div class="sec-head">
+      <h2>Словарь терминов</h2>
+      <div class="hint">Девять понятий урока с пояснениями</div>
+    </div>
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <footer>
+    <p>Термины «бессознательное» и «вытеснение» восходят к З. Фрейду, «коллективное бессознательное» и «архетипы» — к К. Г. Юнгу, идея «зеркального Я» — к Ч. Кули, понятие «Я-концепция» разработано в трудах К. Роджерса и Р. Бёрнса.</p>
+    <p class="mono" style="margin-top:14px">домашняя работа по обществознанию</p>
+  </footer>
+
+</div>
+
+<script>
+const DATA = {
+  samosoznanie:{t:"Самосознание",k:"ядро карты",c:"var(--core-ring)",cls:"c-env",tag:"ядро",
+    d:"Осознание человеком самого себя: своих качеств, мыслей, чувств, интересов, мотивов и своего места среди других людей. Здесь человек становится для себя не только тем, кто познаёт мир, но и объектом собственного познания — «Я» изучает «Я».",
+    l:"Это центр всей карты: все остальные понятия либо служат самосознанию основой, либо составляют его внутреннюю структуру, либо запускают его работу.",
+    e:"Подросток впервые всерьёз задаёт себе вопрос «какой я на самом деле и чего я хочу?» — и не может ответить сразу."},
+  soznanie:{t:"Сознание",k:"основа психики",c:"var(--base)",cls:"c-base",tag:"основа психики",
+    d:"Высшая, свойственная только человеку форма психического отражения действительности: способность строить в голове идеальные образы мира, пользоваться речью и понятиями, ставить цели и заранее планировать действия.",
+    l:"Самосознание — это сознание, повёрнутое на самого себя. Без способности отражать мир в образах человек не смог бы сделать образом и себя.",
+    e:"Вы мысленно проходите завтрашний маршрут до школы, ещё не выйдя из дома."},
+  bessoznatelnoe:{t:"Бессознательное",k:"основа психики",c:"var(--base)",cls:"c-base",tag:"основа психики",
+    d:"Совокупность психических процессов, которые влияют на поведение, но не осознаются человеком: влечения и инстинкты, вытесненные из памяти переживания, привычки-автоматизмы, оговорки, сновидения. Понятие введено З. Фрейдом.",
+    l:"Ставит границу самопознанию: человек знает о себе далеко не всё, и часть его поступков объясняется тем, что скрыто от собственного взгляда.",
+    e:"Вы необъяснимо раздражаетесь на человека — и лишь потом понимаете, что он напомнил вам кого-то из прошлого."},
+  kollektivnoe:{t:"Коллективное бессознательное",k:"основа психики",c:"var(--base)",cls:"c-base",tag:"основа психики",
+    d:"По К. Г. Юнгу — самый глубокий слой психики, общий для всех людей и унаследованный от предков. Его содержание — архетипы: универсальные образы-схемы (Мать, Герой, Тень, Мудрец), которые проявляются в мифах, сказках, религиях и искусстве разных народов.",
+    l:"Показывает, что даже самое личное «Я» опирается на общечеловеческие образы: примеряя на себя роль героя или бунтаря, человек берёт готовый культурный образец.",
+    e:"В сказках разных, никогда не встречавшихся народов повторяется один и тот же сюжет о герое и чудовище."},
+  "ya-obrazy":{t:"Я-образы",k:"структура «Я»",c:"var(--self)",cls:"c-self",tag:"структура «я»",
+    d:"Отдельные, часто несовпадающие представления человека о себе: я-реальное (каков я сейчас), я-идеальное (каким хочу быть), я-зеркальное (каким меня, по-моему, видят другие), я-прошлое и я-будущее, а иногда и я-фантастическое.",
+    l:"Это «кирпичики» самосознания: именно из множества таких образов и складывается целостное представление о себе.",
+    e:"«В классе я тихий, с друзьями — заводила, а хотел бы быть уверенным везде» — сразу три разных я-образа."},
+  "ya-koncepciya":{t:"Я-концепция",k:"структура «Я»",c:"var(--self)",cls:"c-self",tag:"структура «я»",
+    d:"Относительно устойчивая и осознанная система представлений человека о самом себе, собранная из отдельных я-образов. Включает три стороны: знания о себе (когнитивную), отношение к себе (эмоционально-оценочную) и готовность действовать соответственно (поведенческую).",
+    l:"Готовый «результат» работы самосознания: именно на её основе человек строит отношения с другими и принимает решения.",
+    e:"«Я человек ответственный» — и потому вы беретесь за организацию поездки класса, даже когда устали."},
+  samoocenka:{t:"Самооценка",k:"структура «Я»",c:"var(--self)",cls:"c-self",tag:"структура «я»",
+    d:"Оценочная сторона Я-концепции: то, как человек оценивает себя, свои качества и возможности. Бывает завышенной, адекватной и заниженной, устойчивой и колеблющейся; во многом зависит от соотношения успехов и уровня притязаний.",
+    l:"Придаёт самосознанию знак «плюс» или «минус»: знать о себе что-то — одно, а принимать или отвергать это — другое.",
+    e:"Двое получают одну и ту же четвёрку: один считает её победой, другой — провалом."},
+  obshestvennoe:{t:"Общественное сознание",k:"среда и механизм",c:"var(--env)",cls:"c-env",tag:"среда",
+    d:"Совокупность идей, взглядов, теорий, чувств и настроений, свойственных обществу в целом. Существует в формах науки, морали, права, религии, искусства, политики и философии и передаётся человеку через воспитание, образование и общение.",
+    l:"Внешний источник мерок: человек оценивает себя по критериям, которые общество уже считает правильными и важными.",
+    e:"Пока в обществе ценят успех и активность, застенчивый человек скорее сочтёт свою черту недостатком."},
+  refleksiya:{t:"Рефлексия",k:"среда и механизм",c:"var(--env)",cls:"c-env",tag:"механизм",
+    d:"Размышление человека о самом себе: анализ собственных мыслей, чувств, поступков и их причин, а также попытка понять, как тебя воспринимают другие.",
+    l:"Главный «двигатель» самосознания: без обращения мысли на себя я-образы не обновляются и Я-концепция застывает.",
+    e:"После ссоры вы честно разбираете, что именно вас задело и почему вы ответили резко."}
+};
+
+const ORDER = ["samosoznanie","soznanie","bessoznatelnoe","kollektivnoe","ya-obrazy","ya-koncepciya","samoocenka","obshestvennoe","refleksiya"];
+
+const panel = document.getElementById("panel");
+function show(key){
+  const d = DATA[key];
+  if(!d) return;
+  panel.style.setProperty("--pc", d.c);
+  document.getElementById("p-kind").textContent = d.k;
+  document.getElementById("p-title").textContent = d.t;
+  document.getElementById("p-def").textContent = d.d;
+  document.getElementById("p-link").textContent = d.l;
+  document.getElementById("p-ex").textContent = d.e;
+  const g = panel.querySelector(".panel-grid");
+  g.classList.remove("fade"); void g.offsetWidth; g.classList.add("fade");
+  document.querySelectorAll(".node").forEach(n=>{
+    n.setAttribute("aria-current", String(n.dataset.key === key));
+  });
+}
+
+document.querySelectorAll(".node").forEach(n=>{
+  n.addEventListener("click", ()=>show(n.dataset.key));
+  n.addEventListener("keydown", e=>{
+    if(e.key === "Enter" || e.key === " "){ e.preventDefault(); show(n.dataset.key); }
+  });
+});
+
+document.getElementById("cards").innerHTML = ORDER.map(k=>{
+  const d = DATA[k];
+  return `<article class="card ${d.cls}">
+      <div class="tag">${d.tag}</div>
+      <h3>${d.t}</h3>
+      <p>${d.d}</p>
+      <p class="ex"><b>Пример.</b> ${d.e}</p>
+    </article>`;
+}).join("");
+
+show("samosoznanie");
+</script>
+</body>
+</html>
